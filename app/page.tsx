@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth, useVideos, useIdeas, useEvents } from '@/src/lib/hooks'
-import { STAGES } from '@/src/lib/supabase'
+import { STAGES, supabase } from '@/src/lib/supabase'
 
 const TABS = ['Analytics', 'Production', 'Brainstorm', 'Performance', 'Trends']
 
@@ -10,12 +10,7 @@ function LoginModal({ onLogin, onClose }: { onLogin: (e: string, p: string) => P
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-
-  const handleSubmit = async () => {
-    const err = await onLogin(email, password)
-    if (err) setError(err.message)
-  }
-
+  const handleSubmit = async () => { const err = await onLogin(email, password); if (err) setError(err.message) }
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-neutral-900 rounded-xl p-6 w-full max-w-sm shadow-lg">
@@ -27,9 +22,7 @@ function LoginModal({ onLogin, onClose }: { onLogin: (e: string, p: string) => P
           onKeyDown={e => e.key === 'Enter' && handleSubmit()}
           className="w-full mb-4 px-3 py-2 border rounded-lg text-sm dark:bg-neutral-800 dark:border-neutral-700" />
         <div className="flex gap-2">
-          <button onClick={handleSubmit} className="flex-1 bg-neutral-900 dark:bg-white text-white dark:text-black py-2 rounded-lg text-sm font-medium">
-            Sign in
-          </button>
+          <button onClick={handleSubmit} className="flex-1 bg-neutral-900 dark:bg-white text-white dark:text-black py-2 rounded-lg text-sm font-medium">Sign in</button>
           <button onClick={onClose} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
         </div>
       </div>
@@ -38,38 +31,166 @@ function LoginModal({ onLogin, onClose }: { onLogin: (e: string, p: string) => P
 }
 
 function AnalyticsTab() {
-  const platforms = {
-    YouTube: { color: '#FF0000', followers: '—', growth: '—', views: '—', engagement: '—' },
-    TikTok: { color: '#000', followers: '—', growth: '—', views: '—', engagement: '—' },
-    Instagram: { color: '#E1306C', followers: '—', growth: '—', views: '—', engagement: '—' },
-    'Twitter/X': { color: '#1DA1F2', followers: '—', growth: '—', views: '—', engagement: '—' },
+  const [metrics, setMetrics] = useState<any>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [lastSync, setLastSync] = useState<string | null>(null)
+
+  useEffect(() => { loadMetrics() }, [])
+
+  const loadMetrics = async () => {
+    const { data: subs } = await supabase.from('analytics_snapshots')
+      .select('*').eq('platform', 'YouTube').eq('metric_name', 'subscribers')
+      .order('recorded_at', { ascending: false }).limit(1)
+    const { data: views } = await supabase.from('analytics_snapshots')
+      .select('*').eq('platform', 'YouTube').eq('metric_name', 'total_views')
+      .order('recorded_at', { ascending: false }).limit(1)
+    const { data: vidCount } = await supabase.from('analytics_snapshots')
+      .select('*').eq('platform', 'YouTube').eq('metric_name', 'total_videos')
+      .order('recorded_at', { ascending: false }).limit(1)
+    const { data: perfData } = await supabase.from('video_performance')
+      .select('*').eq('platform', 'YouTube').order('recorded_at', { ascending: false }).limit(50)
+
+    const totalEngagement = perfData && perfData.length > 0
+      ? perfData.reduce((sum: number, v: any) => sum + Number(v.engagement_rate || 0), 0) / perfData.length
+      : 0
+
+    setMetrics({
+      subscribers: subs?.[0]?.metric_value ?? '—',
+      totalViews: views?.[0]?.metric_value ?? '—',
+      totalVideos: vidCount?.[0]?.metric_value ?? '—',
+      avgEngagement: totalEngagement > 0 ? totalEngagement.toFixed(2) + '%' : '—',
+      recentVideos: perfData?.length ?? 0,
+      lastRecorded: subs?.[0]?.recorded_at ?? null,
+    })
+    if (subs?.[0]?.recorded_at) {
+      setLastSync(new Date(subs[0].recorded_at).toLocaleString())
+    }
   }
-  const [selected, setSelected] = useState('YouTube')
-  const p = platforms[selected as keyof typeof platforms]
+
+  const handleSync = async () => {
+    setSyncing(true)
+    try {
+      const res = await fetch('/api/sync-youtube')
+      if (res.ok) { await loadMetrics() }
+    } catch (e) { console.error(e) }
+    setSyncing(false)
+  }
+
+  const fmt = (n: any) => {
+    if (n === '—' || n === null || n === undefined) return '—'
+    const num = Number(n)
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
+    return num.toLocaleString()
+  }
 
   return (
     <div>
-      <div className="flex gap-2 mb-4 flex-wrap">
-        {Object.keys(platforms).map(name => (
-          <button key={name} onClick={() => setSelected(name)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${selected === name
-              ? 'bg-neutral-900 dark:bg-white text-white dark:text-black'
-              : 'border border-neutral-200 dark:border-neutral-700 text-neutral-500'}`}>
-            {name}
-          </button>
-        ))}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex gap-2 flex-wrap">
+          <span className="px-3 py-1.5 rounded-lg text-sm font-medium bg-neutral-900 dark:bg-white text-white dark:text-black">YouTube</span>
+          <span className="px-3 py-1.5 rounded-lg text-sm border border-neutral-200 dark:border-neutral-700 text-neutral-400">TikTok</span>
+          <span className="px-3 py-1.5 rounded-lg text-sm border border-neutral-200 dark:border-neutral-700 text-neutral-400">Instagram</span>
+        </div>
+        <button onClick={handleSync} disabled={syncing}
+          className="px-3 py-1.5 rounded-lg text-sm border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-50">
+          {syncing ? 'Syncing...' : 'Sync now'}
+        </button>
       </div>
+
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-        {[['Followers', p.followers, p.growth], ['Views (30d)', p.views], ['Engagement', p.engagement]].map(([label, val, sub]) => (
-          <div key={label as string} className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-3">
-            <div className="text-xs text-neutral-500 mb-1">{label}</div>
-            <div className="text-xl font-medium">{val}</div>
-            {sub && <div className="text-xs text-neutral-400 mt-0.5">{sub as string}</div>}
+        <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-3">
+          <div className="text-xs text-neutral-500 mb-1">Subscribers</div>
+          <div className="text-xl font-medium">{fmt(metrics?.subscribers)}</div>
+        </div>
+        <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-3">
+          <div className="text-xs text-neutral-500 mb-1">Total views</div>
+          <div className="text-xl font-medium">{fmt(metrics?.totalViews)}</div>
+        </div>
+        <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-3">
+          <div className="text-xs text-neutral-500 mb-1">Total videos</div>
+          <div className="text-xl font-medium">{fmt(metrics?.totalVideos)}</div>
+        </div>
+        <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-3">
+          <div className="text-xs text-neutral-500 mb-1">Avg engagement</div>
+          <div className="text-xl font-medium">{metrics?.avgEngagement ?? '—'}</div>
+        </div>
+      </div>
+
+      {lastSync && <div className="text-xs text-neutral-400 mb-4">Last synced: {lastSync}</div>}
+
+      <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-4 text-sm text-neutral-500">
+        TikTok and Instagram APIs coming soon. YouTube is live — click "Sync now" to pull the latest data.
+      </div>
+    </div>
+  )
+}
+
+function PerformanceTab() {
+  const [top5, setTop5] = useState<any[]>([])
+  const [bottom5, setBottom5] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const load = async () => {
+      const { data } = await supabase.from('video_performance')
+        .select('*').eq('platform', 'YouTube').order('views', { ascending: false })
+
+      if (data && data.length > 0) {
+        setTop5(data.slice(0, 5))
+        setBottom5(data.slice(-5).reverse())
+      }
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  if (loading) return <div className="text-sm text-neutral-400">Loading performance data...</div>
+  if (top5.length === 0) return (
+    <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-4 text-sm text-neutral-500">
+      No performance data yet. Go to Analytics and click "Sync now" to pull your YouTube data.
+    </div>
+  )
+
+  const fmt = (n: number) => {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M'
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'K'
+    return n.toLocaleString()
+  }
+
+  return (
+    <div>
+      <div className="mb-6">
+        <div className="text-sm font-medium mb-3">Top 5 performing</div>
+        {top5.map((v, i) => (
+          <div key={v.id} className="flex items-center gap-3 p-3 mb-1.5 bg-neutral-100 dark:bg-neutral-800 rounded-lg">
+            <span className="text-base font-medium text-green-600 dark:text-green-400 min-w-[28px]">#{i + 1}</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium truncate">{v.title || 'YouTube video'}</div>
+              <div className="text-xs text-neutral-500">{v.platform}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-sm font-medium">{fmt(v.views)}</div>
+              <div className="text-xs text-green-600 dark:text-green-400">{v.engagement_rate}% eng.</div>
+            </div>
           </div>
         ))}
       </div>
-      <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-4 text-sm text-neutral-500">
-        Connect your {selected} API to see live data here. Check the setup guide for instructions on adding platform credentials.
+      <div>
+        <div className="text-sm font-medium mb-3">Lowest 5 performing</div>
+        {bottom5.map((v, i) => (
+          <div key={v.id} className="flex items-center gap-3 p-3 mb-1.5 bg-neutral-100 dark:bg-neutral-800 rounded-lg">
+            <span className="text-sm text-red-600 dark:text-red-400 min-w-[28px]">#{top5.length + bottom5.length - i}</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium truncate">{v.title || 'YouTube video'}</div>
+              <div className="text-xs text-neutral-500">{v.platform}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-sm font-medium">{fmt(v.views)}</div>
+              <div className="text-xs text-red-600 dark:text-red-400">{v.engagement_rate}% eng.</div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -158,9 +279,7 @@ function ProductionTab({ isEditor }: { isEditor: boolean }) {
         <span className="text-base font-medium">{monthName}</span>
         <div className="flex gap-2">
           {isEditor && (
-            <button onClick={() => setShowAddForm(!showAddForm)} className="px-3 py-1 border rounded-lg text-sm">
-              + Add video
-            </button>
+            <button onClick={() => setShowAddForm(!showAddForm)} className="px-3 py-1 border rounded-lg text-sm">+ Add video</button>
           )}
           <button onClick={nextMonth} className="px-3 py-1 border rounded-lg text-sm">&rarr;</button>
         </div>
@@ -295,23 +414,14 @@ function ProductionTab({ isEditor }: { isEditor: boolean }) {
 function BrainstormTab({ isEditor }: { isEditor: boolean }) {
   const { ideas, addIdea, vote } = useIdeas()
   const [newIdea, setNewIdea] = useState('')
-
   const sorted = [...ideas].sort((a, b) => b.votes - a.votes)
-
-  const handleAdd = async () => {
-    if (!newIdea.trim()) return
-    await addIdea(newIdea)
-    setNewIdea('')
-  }
-
+  const handleAdd = async () => { if (!newIdea.trim()) return; await addIdea(newIdea); setNewIdea('') }
   return (
     <div>
       {isEditor && (
         <div className="flex gap-2 mb-5">
-          <input value={newIdea} onChange={e => setNewIdea(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleAdd()}
-            placeholder="Drop a content idea..."
-            className="flex-1 px-3 py-2 border rounded-lg text-sm dark:bg-neutral-800 dark:border-neutral-700" />
+          <input value={newIdea} onChange={e => setNewIdea(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAdd()}
+            placeholder="Drop a content idea..." className="flex-1 px-3 py-2 border rounded-lg text-sm dark:bg-neutral-800 dark:border-neutral-700" />
           <button onClick={handleAdd} className="px-4 py-2 bg-neutral-900 dark:bg-white text-white dark:text-black rounded-lg text-sm font-medium">Add</button>
         </div>
       )}
@@ -333,14 +443,6 @@ function BrainstormTab({ isEditor }: { isEditor: boolean }) {
           </div>
         </div>
       ))}
-    </div>
-  )
-}
-
-function PerformanceTab() {
-  return (
-    <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-4 text-sm text-neutral-500">
-      Performance data will appear here once you connect your platform APIs. The database is ready to store views, engagement rates, watch time, and CTR per video per platform.
     </div>
   )
 }
@@ -382,14 +484,11 @@ export default function Dashboard() {
           ) : (
             <>
               <span className="text-xs text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full">Viewing</span>
-              <button onClick={() => setShowLogin(true)} className="text-xs text-blue-600 dark:text-blue-400 hover:underline">
-                Sign in to edit
-              </button>
+              <button onClick={() => setShowLogin(true)} className="text-xs text-blue-600 dark:text-blue-400 hover:underline">Sign in to edit</button>
             </>
           )}
         </div>
       </div>
-
       <div className="flex gap-1 mb-5 flex-wrap border-b border-neutral-200 dark:border-neutral-700 pb-2.5">
         {TABS.map(t => (
           <button key={t} onClick={() => setTab(t)}
@@ -400,9 +499,7 @@ export default function Dashboard() {
           </button>
         ))}
       </div>
-
       {renderTab()}
-
       {showLogin && <LoginModal onLogin={signIn} onClose={() => setShowLogin(false)} />}
     </div>
   )
