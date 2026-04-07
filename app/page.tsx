@@ -357,7 +357,25 @@ function ProductionTab({ isEditor }: { isEditor: boolean }) {
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium truncate">{v.title}</div>
                       <div className={`text-xs ${isOD ? 'text-red-600 dark:text-red-400' : 'text-neutral-500'}`}>
+                        <div className={`text-xs ${isOD ? 'text-red-600 dark:text-red-400' : 'text-neutral-500'}`}>
                         {isOD ? 'Overdue \u2014 ' : ''}{stage?.label}
+                        {v.assigned_to && ` \u00b7 ${v.assigned_to}`}
+                      </div>
+                      {v.drive_link ? (
+                        <a href={v.drive_link} target="_blank" rel="noopener noreferrer"
+                          className="text-xs text-blue-500 hover:underline mt-0.5 inline-block" onClick={e => e.stopPropagation()}>
+                          Open in Drive
+                        </a>
+                      ) : isEditor ? (
+                        <button className="text-xs text-neutral-400 hover:text-blue-500 mt-0.5"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            const link = prompt('Paste Google Drive folder link:');
+                            if (link) { await supabase.from('videos').update({ drive_link: link }).eq('id', v.id); window.location.reload(); }
+                          }}>
+                          + Add Drive link
+                        </button>
+                      ) : null}
                         {v.assigned_to && ` \u00b7 ${v.assigned_to}`}
                       </div>
                     </div>

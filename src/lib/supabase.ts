@@ -14,6 +14,7 @@ export type Video = {
   assigned_to: string | null
   created_at: string
   updated_at: string
+  drive_link: string | null
 }
 
 export type Idea = {
