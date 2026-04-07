@@ -1,65 +1,409 @@
-import Image from "next/image";
+'use client'
 
-export default function Home() {
+import { useState } from 'react'
+import { useAuth, useVideos, useIdeas, useEvents } from '@/src/lib/hooks'
+import { STAGES } from '@/src/lib/supabase'
+
+const TABS = ['Analytics', 'Production', 'Brainstorm', 'Performance', 'Trends']
+
+function LoginModal({ onLogin, onClose }: { onLogin: (e: string, p: string) => Promise<any>, onClose: () => void }) {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+
+  const handleSubmit = async () => {
+    const err = await onLogin(email, password)
+    if (err) setError(err.message)
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white dark:bg-neutral-900 rounded-xl p-6 w-full max-w-sm shadow-lg">
+        <h2 className="text-lg font-medium mb-4">Sign in to edit</h2>
+        {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
+        <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)}
+          className="w-full mb-3 px-3 py-2 border rounded-lg text-sm dark:bg-neutral-800 dark:border-neutral-700" />
+        <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+          className="w-full mb-4 px-3 py-2 border rounded-lg text-sm dark:bg-neutral-800 dark:border-neutral-700" />
+        <div className="flex gap-2">
+          <button onClick={handleSubmit} className="flex-1 bg-neutral-900 dark:bg-white text-white dark:text-black py-2 rounded-lg text-sm font-medium">
+            Sign in
+          </button>
+          <button onClick={onClose} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+      </div>
     </div>
-  );
+  )
+}
+
+function AnalyticsTab() {
+  const platforms = {
+    YouTube: { color: '#FF0000', followers: '—', growth: '—', views: '—', engagement: '—' },
+    TikTok: { color: '#000', followers: '—', growth: '—', views: '—', engagement: '—' },
+    Instagram: { color: '#E1306C', followers: '—', growth: '—', views: '—', engagement: '—' },
+    'Twitter/X': { color: '#1DA1F2', followers: '—', growth: '—', views: '—', engagement: '—' },
+  }
+  const [selected, setSelected] = useState('YouTube')
+  const p = platforms[selected as keyof typeof platforms]
+
+  return (
+    <div>
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {Object.keys(platforms).map(name => (
+          <button key={name} onClick={() => setSelected(name)}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${selected === name
+              ? 'bg-neutral-900 dark:bg-white text-white dark:text-black'
+              : 'border border-neutral-200 dark:border-neutral-700 text-neutral-500'}`}>
+            {name}
+          </button>
+        ))}
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        {[['Followers', p.followers, p.growth], ['Views (30d)', p.views], ['Engagement', p.engagement]].map(([label, val, sub]) => (
+          <div key={label as string} className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-3">
+            <div className="text-xs text-neutral-500 mb-1">{label}</div>
+            <div className="text-xl font-medium">{val}</div>
+            {sub && <div className="text-xs text-neutral-400 mt-0.5">{sub as string}</div>}
+          </div>
+        ))}
+      </div>
+      <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-4 text-sm text-neutral-500">
+        Connect your {selected} API to see live data here. Check the setup guide for instructions on adding platform credentials.
+      </div>
+    </div>
+  )
+}
+
+function ProductionTab({ isEditor }: { isEditor: boolean }) {
+  const { videos, updateStage, addVideo } = useVideos()
+  const { events } = useEvents()
+  const today = new Date().toISOString().split('T')[0]
+  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth())
+  const [currentYear, setCurrentYear] = useState(new Date().getFullYear())
+  const [selectedDate, setSelectedDate] = useState<number | null>(null)
+  const [editingVideo, setEditingVideo] = useState<string | null>(null)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [newTitle, setNewTitle] = useState('')
+  const [newDue, setNewDue] = useState('')
+
+  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate()
+  const firstDay = new Date(currentYear, currentMonth, 1).getDay()
+  const monthName = new Date(currentYear, currentMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+
+  const prevMonth = () => { if (currentMonth === 0) { setCurrentMonth(11); setCurrentYear(y => y - 1) } else setCurrentMonth(m => m - 1) }
+  const nextMonth = () => { if (currentMonth === 11) { setCurrentMonth(0); setCurrentYear(y => y + 1) } else setCurrentMonth(m => m + 1) }
+
+  const stageMap: Record<string, typeof STAGES[number]> = {}
+  STAGES.forEach(s => { stageMap[s.id] = s })
+
+  const overdue = videos.filter(v => v.due_date && v.due_date < today && v.stage !== 'posted')
+  const stageCounts: Record<string, number> = {}
+  STAGES.forEach(s => { stageCounts[s.id] = videos.filter(v => v.stage === s.id).length })
+
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const makeDateStr = (day: number) => `${currentYear}-${pad(currentMonth + 1)}-${pad(day)}`
+  const getItems = (day: number) => ({
+    vids: videos.filter(v => v.due_date === makeDateStr(day)),
+    evts: events.filter(e => e.date === makeDateStr(day)),
+  })
+
+  const days: (number | null)[] = []
+  for (let i = 0; i < firstDay; i++) days.push(null)
+  for (let d = 1; d <= daysInMonth; d++) days.push(d)
+
+  const sel = selectedDate ? getItems(selectedDate) : null
+  const selStr = selectedDate ? makeDateStr(selectedDate) : null
+
+  const eventColors: Record<string, { bg: string, text: string }> = {
+    deadline: { bg: 'bg-red-50 dark:bg-red-950', text: 'text-red-700 dark:text-red-400' },
+    post: { bg: 'bg-green-50 dark:bg-green-950', text: 'text-green-700 dark:text-green-400' },
+    event: { bg: 'bg-amber-50 dark:bg-amber-950', text: 'text-amber-700 dark:text-amber-400' },
+  }
+
+  const handleAdd = async () => {
+    if (!newTitle.trim() || !newDue) return
+    await addVideo(newTitle, newDue)
+    setNewTitle(''); setNewDue(''); setShowAddForm(false)
+  }
+
+  return (
+    <div>
+      {overdue.length > 0 && (
+        <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-3 mb-4">
+          <div className="text-sm font-medium text-red-700 dark:text-red-400 mb-1">
+            Overdue — {overdue.length} video{overdue.length > 1 ? 's' : ''} behind schedule
+          </div>
+          {overdue.map(v => (
+            <div key={v.id} className="text-xs text-red-600 dark:text-red-400 py-0.5">
+              <span className="font-medium">{v.title}</span>
+              <span className="opacity-70"> — stuck in {stageMap[v.stage]?.label}, due {new Date(v.due_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-1.5 mb-4">
+        {STAGES.map(s => (
+          <div key={s.id} className="flex items-center gap-1.5 text-xs bg-neutral-100 dark:bg-neutral-800 rounded-full px-2.5 py-1">
+            <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: s.color }} />
+            <span className="text-neutral-500">{s.label}</span>
+            <span className="font-medium">{stageCounts[s.id]}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-between mb-3">
+        <button onClick={prevMonth} className="px-3 py-1 border rounded-lg text-sm">&larr;</button>
+        <span className="text-base font-medium">{monthName}</span>
+        <div className="flex gap-2">
+          {isEditor && (
+            <button onClick={() => setShowAddForm(!showAddForm)} className="px-3 py-1 border rounded-lg text-sm">
+              + Add video
+            </button>
+          )}
+          <button onClick={nextMonth} className="px-3 py-1 border rounded-lg text-sm">&rarr;</button>
+        </div>
+      </div>
+
+      {showAddForm && isEditor && (
+        <div className="flex gap-2 mb-4 flex-wrap">
+          <input placeholder="Video title" value={newTitle} onChange={e => setNewTitle(e.target.value)}
+            className="flex-1 min-w-[160px] px-3 py-1.5 border rounded-lg text-sm dark:bg-neutral-800 dark:border-neutral-700" />
+          <input type="date" value={newDue} onChange={e => setNewDue(e.target.value)}
+            className="px-3 py-1.5 border rounded-lg text-sm dark:bg-neutral-800 dark:border-neutral-700" />
+          <button onClick={handleAdd} className="px-4 py-1.5 bg-neutral-900 dark:bg-white text-white dark:text-black rounded-lg text-sm font-medium">Add</button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-7 gap-0.5 mb-4">
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+          <div key={d} className="text-center text-[11px] text-neutral-400 font-medium py-1">{d}</div>
+        ))}
+        {days.map((day, i) => {
+          if (!day) return <div key={`e-${i}`} />
+          const { vids, evts } = getItems(day)
+          const ds = makeDateStr(day)
+          const isToday = ds === today
+          const isSel = selectedDate === day
+          const isPast = ds < today
+          const hasOverdue = vids.some(v => v.due_date && v.due_date < today && v.stage !== 'posted')
+          return (
+            <div key={day} onClick={() => setSelectedDate(isSel ? null : day)}
+              className={`min-h-[72px] p-1 rounded-lg cursor-pointer transition-colors
+                ${isSel ? 'bg-blue-50 dark:bg-blue-950 ring-1 ring-blue-300 dark:ring-blue-700' : isToday ? 'bg-neutral-100 dark:bg-neutral-800 ring-1 ring-blue-300 dark:ring-blue-600' : 'hover:bg-neutral-50 dark:hover:bg-neutral-800/50'}
+                ${hasOverdue ? 'ring-1 ring-red-400' : ''}
+                ${isPast && !hasOverdue ? 'opacity-40' : ''}`}>
+              <div className={`text-xs text-center mb-0.5 ${isToday ? 'font-medium text-blue-600 dark:text-blue-400' : ''}`}>{day}</div>
+              <div className="flex flex-col gap-0.5">
+                {vids.slice(0, 2).map(v => {
+                  const isOD = v.due_date !== null && v.due_date < today && v.stage !== 'posted'
+                  return (
+                    <div key={v.id} className="text-[9px] leading-tight px-1 py-0.5 rounded truncate font-medium"
+                      style={{
+                        background: isOD ? 'rgb(254 226 226)' : stageMap[v.stage]?.color + '18',
+                        color: isOD ? 'rgb(185 28 28)' : stageMap[v.stage]?.color,
+                        borderLeft: `2px solid ${isOD ? 'rgb(185 28 28)' : stageMap[v.stage]?.color}`,
+                      }}>
+                      {v.title.length > 14 ? v.title.slice(0, 13) + '\u2026' : v.title}
+                    </div>
+                  )
+                })}
+                {evts.slice(0, vids.length > 1 ? 1 : 2).map((ev, j) => (
+                  <div key={`ev-${j}`} className={`text-[9px] leading-tight px-1 py-0.5 rounded truncate ${eventColors[ev.type]?.bg} ${eventColors[ev.type]?.text}`}>
+                    {ev.title.length > 14 ? ev.title.slice(0, 13) + '\u2026' : ev.title}
+                  </div>
+                ))}
+                {(vids.length + evts.length) > 3 && <div className="text-[9px] text-neutral-400 text-center">+{vids.length + evts.length - 3}</div>}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {selectedDate && sel && (
+        <div className="bg-neutral-100 dark:bg-neutral-800 rounded-xl p-4">
+          <div className="text-sm font-medium mb-3">
+            {selStr && new Date(selStr + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+          </div>
+          {sel.vids.length > 0 && (
+            <div className="mb-3">
+              <div className="text-[11px] text-neutral-400 uppercase tracking-wide mb-2">Videos</div>
+              {sel.vids.map(v => {
+                const stage = stageMap[v.stage]
+                const isOD = v.due_date !== null && v.due_date < today && v.stage !== 'posted'
+                return (
+                  <div key={v.id} className={`flex items-center gap-3 p-3 mb-1.5 bg-white dark:bg-neutral-900 rounded-lg ${isOD ? 'ring-1 ring-red-400' : 'border border-neutral-200 dark:border-neutral-700'}`}>
+                    <div className="w-1 h-9 rounded-sm flex-shrink-0" style={{ background: isOD ? '#A32D2D' : stage?.color }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">{v.title}</div>
+                      <div className={`text-xs ${isOD ? 'text-red-600 dark:text-red-400' : 'text-neutral-500'}`}>
+                        {isOD ? 'Overdue \u2014 ' : ''}{stage?.label}
+                        {v.assigned_to && ` \u00b7 ${v.assigned_to}`}
+                      </div>
+                    </div>
+                    {isEditor && editingVideo === v.id ? (
+                      <div className="flex flex-wrap gap-1">
+                        {STAGES.map(s => (
+                          <button key={s.id} onClick={() => { updateStage(v.id, s.id); setEditingVideo(null) }}
+                            className="px-2 py-0.5 text-[10px] rounded-full border transition"
+                            style={{
+                              background: v.stage === s.id ? s.color : 'transparent',
+                              color: v.stage === s.id ? '#fff' : 'inherit',
+                              borderColor: s.color + '66',
+                            }}>
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : isEditor ? (
+                      <button onClick={() => setEditingVideo(v.id)}
+                        className="px-2.5 py-1 text-xs rounded-full border"
+                        style={{ borderColor: stage?.color + '44', color: stage?.color }}>
+                        {stage?.label} &#9662;
+                      </button>
+                    ) : (
+                      <span className="px-2.5 py-1 text-xs rounded-full" style={{ background: stage?.color + '18', color: stage?.color }}>
+                        {stage?.label}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {sel.evts.length > 0 && (
+            <div>
+              <div className="text-[11px] text-neutral-400 uppercase tracking-wide mb-2">Events</div>
+              {sel.evts.map(ev => (
+                <div key={ev.id} className="flex items-center gap-3 p-2.5 mb-1 bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-700">
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full capitalize ${eventColors[ev.type]?.bg} ${eventColors[ev.type]?.text}`}>{ev.type}</span>
+                  <span className="text-sm">{ev.title}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {sel.vids.length === 0 && sel.evts.length === 0 && (
+            <div className="text-sm text-neutral-400">Nothing scheduled</div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function BrainstormTab({ isEditor }: { isEditor: boolean }) {
+  const { ideas, addIdea, vote } = useIdeas()
+  const [newIdea, setNewIdea] = useState('')
+
+  const sorted = [...ideas].sort((a, b) => b.votes - a.votes)
+
+  const handleAdd = async () => {
+    if (!newIdea.trim()) return
+    await addIdea(newIdea)
+    setNewIdea('')
+  }
+
+  return (
+    <div>
+      {isEditor && (
+        <div className="flex gap-2 mb-5">
+          <input value={newIdea} onChange={e => setNewIdea(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleAdd()}
+            placeholder="Drop a content idea..."
+            className="flex-1 px-3 py-2 border rounded-lg text-sm dark:bg-neutral-800 dark:border-neutral-700" />
+          <button onClick={handleAdd} className="px-4 py-2 bg-neutral-900 dark:bg-white text-white dark:text-black rounded-lg text-sm font-medium">Add</button>
+        </div>
+      )}
+      {sorted.map(idea => (
+        <div key={idea.id} className="flex items-center gap-3 p-3 mb-2 bg-neutral-100 dark:bg-neutral-800 rounded-lg">
+          <button onClick={() => isEditor && vote(idea.id, idea.votes)} disabled={!isEditor}
+            className={`px-3 py-1 text-sm rounded-lg border min-w-[44px] ${isEditor ? 'cursor-pointer hover:bg-neutral-200 dark:hover:bg-neutral-700' : 'cursor-default'}`}>
+            {idea.votes}
+          </button>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm">{idea.text}</div>
+            {idea.tags.length > 0 && (
+              <div className="flex gap-1 mt-1 flex-wrap">
+                {idea.tags.map(t => (
+                  <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400">{t}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function PerformanceTab() {
+  return (
+    <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-4 text-sm text-neutral-500">
+      Performance data will appear here once you connect your platform APIs. The database is ready to store views, engagement rates, watch time, and CTR per video per platform.
+    </div>
+  )
+}
+
+function TrendsTab() {
+  return (
+    <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-4 text-sm text-neutral-500">
+      Add trending niche research here — either manually or by connecting a research API. Each entry can include the creator, view count, demographic breakdown, and tactical insights.
+    </div>
+  )
+}
+
+export default function Dashboard() {
+  const { user, loading, signIn, signOut, isEditor } = useAuth()
+  const [tab, setTab] = useState('Production')
+  const [showLogin, setShowLogin] = useState(false)
+
+  const renderTab = () => {
+    switch (tab) {
+      case 'Analytics': return <AnalyticsTab />
+      case 'Production': return <ProductionTab isEditor={isEditor} />
+      case 'Brainstorm': return <BrainstormTab isEditor={isEditor} />
+      case 'Performance': return <PerformanceTab />
+      case 'Trends': return <TrendsTab />
+      default: return null
+    }
+  }
+
+  return (
+    <div className="max-w-3xl mx-auto px-4 py-6 font-sans">
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-lg font-medium">Creator command center</h1>
+        <div className="flex items-center gap-2">
+          {isEditor ? (
+            <>
+              <span className="text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950 px-2 py-0.5 rounded-full">Editor</span>
+              <button onClick={signOut} className="text-xs text-neutral-500 hover:text-neutral-700">Sign out</button>
+            </>
+          ) : (
+            <>
+              <span className="text-xs text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full">Viewing</span>
+              <button onClick={() => setShowLogin(true)} className="text-xs text-blue-600 dark:text-blue-400 hover:underline">
+                Sign in to edit
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="flex gap-1 mb-5 flex-wrap border-b border-neutral-200 dark:border-neutral-700 pb-2.5">
+        {TABS.map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`px-3 py-1.5 rounded-lg text-sm transition ${tab === t
+              ? 'bg-neutral-900 dark:bg-white text-white dark:text-black font-medium'
+              : 'text-neutral-500 hover:text-neutral-700'}`}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {renderTab()}
+
+      {showLogin && <LoginModal onLogin={signIn} onClose={() => setShowLogin(false)} />}
+    </div>
+  )
 }
