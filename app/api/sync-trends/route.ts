@@ -22,7 +22,6 @@ const EXCLUDED_KEYWORDS = [
   'toddler', 'baby learn', 'abc song', 'phonics', 'counting song',
 ]
 
-// Broader queries — more likely to return results in shorter windows
 const SEARCH_QUERIES = [
   'kids challenge family fun',
   'pretend play kids adventure',
@@ -34,18 +33,17 @@ const SEARCH_QUERIES = [
   'kids game challenge',
 ]
 
-// Minimum views to filter out low-quality content
 const MIN_VIEWS: Record<string, number> = {
-  '7d': 5_000,
-  '30d': 20_000,
-  '90d': 50_000,
+  '7d': 1_000,
+  '30d': 5_000,
+  '90d': 20_000,
 }
 
-// Basic English title check — skip titles that are mostly non-Latin characters
+// Only compare actual letters, ignoring emojis/numbers/punctuation
 function isEnglish(title: string) {
-  const latinChars = title.replace(/[^a-zA-Z]/g, '').length
-  const totalChars = title.replace(/\s/g, '').length
-  return totalChars === 0 || latinChars / totalChars > 0.5
+  const allLetters = (title.match(/\p{L}/gu) ?? []).length
+  const latinLetters = (title.match(/[a-zA-Z]/g) ?? []).length
+  return allLetters === 0 || latinLetters / allLetters > 0.5
 }
 
 async function ytFetch(endpoint: string, params: Record<string, string>) {
@@ -76,9 +74,8 @@ export async function GET(request: Request) {
     const period = (searchParams.get('period') ?? '30d') as '7d' | '30d' | '90d'
     const days = period === '7d' ? 7 : period === '90d' ? 90 : 30
     const publishedAfter = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
-    const minViews = MIN_VIEWS[period] ?? 20_000
+    const minViews = MIN_VIEWS[period] ?? 5_000
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
-
     const now = new Date().toISOString()
 
     const searchResults = await Promise.all(
@@ -109,8 +106,10 @@ export async function GET(request: Request) {
       }
     }
 
+    // Always clear stale data before inserting new results
+    await supabase.from('niche_trends').delete().like('source_url', '%youtube.com%')
+
     if (videoIds.length === 0) {
-      await supabase.from('niche_trends').delete().like('source_url', '%youtube.com%')
       return NextResponse.json({ error: 'No videos found for this period' }, { status: 404 })
     }
 
@@ -160,11 +159,8 @@ export async function GET(request: Request) {
       .slice(0, 20)
       .map(({ _views_raw, ...e }: any) => e)
 
-    // Always clear old auto-synced entries before inserting new ones
-    await supabase.from('niche_trends').delete().like('source_url', '%youtube.com%')
-
     if (entries.length === 0) {
-      return NextResponse.json({ error: `No videos found for this period with enough views (min ${fmtViews(minViews)})` }, { status: 404 })
+      return NextResponse.json({ error: `No videos found with enough views in this period (min ${fmtViews(minViews)})` }, { status: 404 })
     }
 
     const { error } = await supabase.from('niche_trends').insert(entries)
