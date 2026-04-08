@@ -59,8 +59,13 @@ function isExcluded(title: string, channelTitle: string) {
   return EXCLUDED_KEYWORDS.some(kw => lower.includes(kw))
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url)
+    const period = searchParams.get('period') ?? '30d'
+    const days = period === '7d' ? 7 : period === '90d' ? 90 : 30
+    const publishedAfter = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+
     const now = new Date().toISOString()
 
     // Run searches in parallel (cap at 8 to stay within quota)
@@ -75,6 +80,7 @@ export async function GET() {
           relevanceLanguage: 'en',
           safeSearch: 'strict',
           videoCategoryId: '22', // People & Blogs (family/kids content)
+          publishedAfter,
         }).catch(() => ({ items: [] }))
       )
     )
