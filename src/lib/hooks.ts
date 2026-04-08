@@ -96,8 +96,12 @@ export function useIdeas() {
     return () => { supabase.removeChannel(channel) }
   }, [])
 
-  const addIdea = async (text: string, tags: string[] = [], url: string | null = null) => {
-    await supabase.from('ideas').insert({ text, tags, url })
+  const addIdea = async (text: string, tags: string[] = [], url: string | null = null, notes: string | null = null, platform: string | null = null) => {
+    await supabase.from('ideas').insert({ text, tags, url, notes, platform })
+  }
+
+  const updateIdea = async (id: string, updates: { text?: string; tags?: string[]; url?: string | null; notes?: string | null; platform?: string | null }) => {
+    await supabase.from('ideas').update(updates).eq('id', id)
   }
 
   const vote = async (id: string, currentVotes: number) => {
@@ -108,7 +112,7 @@ export function useIdeas() {
     await supabase.from('ideas').delete().eq('id', id)
   }
 
-  return { ideas, loading, addIdea, vote, deleteIdea }
+  return { ideas, loading, addIdea, updateIdea, vote, deleteIdea }
 }
 
 export function useEvents() {

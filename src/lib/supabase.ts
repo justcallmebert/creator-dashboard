@@ -25,6 +25,8 @@ export type Idea = {
   created_by: string | null
   created_at: string
   url: string | null
+  notes: string | null
+  platform: string | null
 }
 
 export type CalendarEvent = {
