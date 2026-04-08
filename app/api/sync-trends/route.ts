@@ -23,14 +23,9 @@ const EXCLUDED_KEYWORDS = [
 ]
 
 const SEARCH_QUERIES = [
-  'kids challenge family fun',
+  'family challenge kids',
   'pretend play kids adventure',
-  'hide and seek challenge',
-  'floor is lava kids',
-  'family challenge last to leave',
-  'cops and robbers kids',
-  'mystery challenge family',
-  'kids game challenge',
+  'kids game challenge fun',
 ]
 
 const MIN_VIEWS: Record<string, number> = {
