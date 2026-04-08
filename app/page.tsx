@@ -934,34 +934,38 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6 font-sans">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-lg font-medium">Creator command center</h1>
-        <div className="flex items-center gap-2">
-          {isEditor ? (
-            <>
-              <span className="text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950 px-2 py-0.5 rounded-full">Editor</span>
-              <button onClick={signOut} className="text-xs text-neutral-500 hover:text-neutral-700">Sign out</button>
-            </>
-          ) : (
-            <>
-              <span className="text-xs text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full">Viewing</span>
-              <button onClick={() => setShowLogin(true)} className="text-xs text-blue-600 dark:text-blue-400 hover:underline">Sign in to edit</button>
-            </>
-          )}
+    <div className="max-w-3xl mx-auto px-4 font-sans">
+      <div className="sticky top-0 z-20 bg-white dark:bg-neutral-900 pt-6">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-lg font-medium">Creator command center</h1>
+          <div className="flex items-center gap-2">
+            {isEditor ? (
+              <>
+                <span className="text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950 px-2 py-0.5 rounded-full">Editor</span>
+                <button onClick={signOut} className="text-xs text-neutral-500 hover:text-neutral-700">Sign out</button>
+              </>
+            ) : (
+              <>
+                <span className="text-xs text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full">Viewing</span>
+                <button onClick={() => setShowLogin(true)} className="text-xs text-blue-600 dark:text-blue-400 hover:underline">Sign in to edit</button>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="flex gap-1 mb-0 flex-wrap border-b border-neutral-200 dark:border-neutral-700 pb-2.5">
+          {TABS.map(t => (
+            <button key={t} onClick={() => switchTab(t)}
+              className={`px-3 py-1.5 rounded-lg text-sm transition ${tab === t
+                ? 'bg-neutral-900 dark:bg-white text-white dark:text-black font-medium'
+                : 'text-neutral-500 hover:text-neutral-700'}`}>
+              {t}
+            </button>
+          ))}
         </div>
       </div>
-      <div className="flex gap-1 mb-5 flex-wrap border-b border-neutral-200 dark:border-neutral-700 pb-2.5">
-        {TABS.map(t => (
-          <button key={t} onClick={() => switchTab(t)}
-            className={`px-3 py-1.5 rounded-lg text-sm transition ${tab === t
-              ? 'bg-neutral-900 dark:bg-white text-white dark:text-black font-medium'
-              : 'text-neutral-500 hover:text-neutral-700'}`}>
-            {t}
-          </button>
-        ))}
+      <div className="pt-5">
+        {renderTab()}
       </div>
-      {renderTab()}
       {showLogin && <LoginModal onLogin={signIn} onClose={() => setShowLogin(false)} />}
     </div>
   )
