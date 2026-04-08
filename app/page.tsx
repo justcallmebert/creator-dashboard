@@ -474,6 +474,13 @@ function TrendsTab({ isEditor }: { isEditor: boolean }) {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
 
+  useEffect(() => {
+    if (!loading && trends.length === 0) {
+      setSyncing(true)
+      fetch('/api/sync-trends').catch(console.error).finally(() => setSyncing(false))
+    }
+  }, [loading])
+
   const handleSync = async () => {
     setSyncing(true)
     try {
@@ -498,7 +505,7 @@ function TrendsTab({ isEditor }: { isEditor: boolean }) {
     setShowForm(false)
   }
 
-  if (loading) return <div className="text-sm text-neutral-400">Loading trends...</div>
+  if (loading || (syncing && trends.length === 0)) return <div className="text-sm text-neutral-400">Loading trends...</div>
 
   return (
     <div>
