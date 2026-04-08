@@ -9,7 +9,6 @@ const supabase = createClient(
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY!
 const BASE = 'https://www.googleapis.com/youtube/v3'
 
-// Channels to exclude from trend results (their own channels)
 const EXCLUDED_CHANNEL_NAMES = new Set([
   'A for Adley- Learning & Fun',
   'A for Adley',
@@ -18,25 +17,36 @@ const EXCLUDED_CHANNEL_NAMES = new Set([
   'G for Gaming',
 ])
 
-// Content that's too young for Adley at 11
 const EXCLUDED_KEYWORDS = [
   'nursery rhyme', 'nursery rhymes', 'baby song', 'lullaby', 'lullabies',
   'toddler', 'baby learn', 'abc song', 'phonics', 'counting song',
 ]
 
-// Search queries derived from their top-performing video tags
+// Broader queries — more likely to return results in shorter windows
 const SEARCH_QUERIES = [
-  'floor is lava challenge kids',
-  'family fun challenge pretend play',
-  'hide and seek challenge kids',
-  'cops and robbers kids adventure',
-  'last to leave challenge family',
-  'mystery cafe challenge kids',
-  'trick or treat halloween kids challenge',
-  'family game challenge leprechaun',
-  'pirate adventure challenge kids',
-  'roblox family challenge irl',
+  'kids challenge family fun',
+  'pretend play kids adventure',
+  'hide and seek challenge',
+  'floor is lava kids',
+  'family challenge last to leave',
+  'cops and robbers kids',
+  'mystery challenge family',
+  'kids game challenge',
 ]
+
+// Minimum views to filter out low-quality content
+const MIN_VIEWS: Record<string, number> = {
+  '7d': 5_000,
+  '30d': 20_000,
+  '90d': 50_000,
+}
+
+// Basic English title check — skip titles that are mostly non-Latin characters
+function isEnglish(title: string) {
+  const latinChars = title.replace(/[^a-zA-Z]/g, '').length
+  const totalChars = title.replace(/\s/g, '').length
+  return totalChars === 0 || latinChars / totalChars > 0.5
+}
 
 async function ytFetch(endpoint: string, params: Record<string, string>) {
   const url = new URL(`${BASE}/${endpoint}`)
@@ -55,6 +65,7 @@ function fmtViews(n: number) {
 
 function isExcluded(title: string, channelTitle: string) {
   if (EXCLUDED_CHANNEL_NAMES.has(channelTitle)) return true
+  if (!isEnglish(title)) return true
   const lower = title.toLowerCase()
   return EXCLUDED_KEYWORDS.some(kw => lower.includes(kw))
 }
@@ -62,21 +73,22 @@ function isExcluded(title: string, channelTitle: string) {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const period = searchParams.get('period') ?? '30d'
+    const period = (searchParams.get('period') ?? '30d') as '7d' | '30d' | '90d'
     const days = period === '7d' ? 7 : period === '90d' ? 90 : 30
     const publishedAfter = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+    const minViews = MIN_VIEWS[period] ?? 20_000
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
 
     const now = new Date().toISOString()
 
-    // Run searches in parallel (cap at 8 to stay within quota)
     const searchResults = await Promise.all(
-      SEARCH_QUERIES.slice(0, 8).map(q =>
+      SEARCH_QUERIES.map(q =>
         ytFetch('search', {
           part: 'id,snippet',
           q,
           type: 'video',
-          order: 'date',
-          maxResults: '15',
+          order: 'relevance',
+          maxResults: '20',
           relevanceLanguage: 'en',
           safeSearch: 'strict',
           publishedAfter,
@@ -84,7 +96,6 @@ export async function GET(request: Request) {
       )
     )
 
-    // Deduplicate and pre-filter by channel name
     const seenIds = new Set<string>()
     const videoIds: string[] = []
     for (const result of searchResults) {
@@ -99,10 +110,10 @@ export async function GET(request: Request) {
     }
 
     if (videoIds.length === 0) {
-      return NextResponse.json({ error: 'No videos found' }, { status: 404 })
+      await supabase.from('niche_trends').delete().like('source_url', '%youtube.com%')
+      return NextResponse.json({ error: 'No videos found for this period' }, { status: 404 })
     }
 
-    // Fetch full stats in batches of 50
     const batches = []
     for (let i = 0; i < videoIds.length; i += 50) {
       batches.push(videoIds.slice(i, i + 50))
@@ -117,12 +128,11 @@ export async function GET(request: Request) {
     )
     const allVideos = videoResponses.flatMap(r => r.items ?? [])
 
-    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
-
     const entries = allVideos
       .filter((video: any) => {
         if (isExcluded(video.snippet.title, video.snippet.channelTitle)) return false
-        return new Date(video.snippet.publishedAt) >= cutoff
+        if (new Date(video.snippet.publishedAt) < cutoff) return false
+        return Number(video.statistics?.viewCount ?? 0) >= minViews
       })
       .map((video: any) => {
         const views = Number(video.statistics?.viewCount ?? 0)
@@ -140,18 +150,22 @@ export async function GET(request: Request) {
           creator: video.snippet.channelTitle,
           views: fmtViews(views),
           demographic: categories.slice(0, 2).join(', ') || 'Kids & Family',
-          insight: `${engagement}% engagement · ${fmtViews(likes)} likes · published ${new Date(video.snippet.publishedAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`,
+          insight: `${engagement}% engagement · ${fmtViews(likes)} likes · published ${new Date(video.snippet.publishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
           source_url: `https://www.youtube.com/watch?v=${video.id}`,
           added_at: now,
           _views_raw: views,
         }
       })
-      .sort((a: any, b: any) => b._views_raw - a._views_raw)  // sort by views after date-filtering
+      .sort((a: any, b: any) => b._views_raw - a._views_raw)
       .slice(0, 20)
       .map(({ _views_raw, ...e }: any) => e)
 
-    // Replace previous auto-synced entries
+    // Always clear old auto-synced entries before inserting new ones
     await supabase.from('niche_trends').delete().like('source_url', '%youtube.com%')
+
+    if (entries.length === 0) {
+      return NextResponse.json({ error: `No videos found for this period with enough views (min ${fmtViews(minViews)})` }, { status: 404 })
+    }
 
     const { error } = await supabase.from('niche_trends').insert(entries)
     if (error) return NextResponse.json({ error: 'Supabase write failed', details: error }, { status: 500 })
