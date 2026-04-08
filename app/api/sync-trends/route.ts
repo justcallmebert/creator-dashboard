@@ -73,22 +73,22 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const period = (searchParams.get('period') ?? '30d') as '7d' | '30d' | '90d'
     const days = period === '7d' ? 7 : period === '90d' ? 90 : 30
-    const publishedAfter = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
     const minViews = MIN_VIEWS[period] ?? 5_000
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
     const now = new Date().toISOString()
 
+    // Search by viewCount without publishedAfter — YouTube ignores publishedAfter
+    // when combined with relevance/viewCount ordering, returning zero results.
+    // Instead we fetch top results and filter strictly by publishedAt after.
     const searchResults = await Promise.all(
       SEARCH_QUERIES.map(q =>
         ytFetch('search', {
           part: 'id,snippet',
           q,
           type: 'video',
-          order: 'relevance',
-          maxResults: '20',
+          order: 'viewCount',
+          maxResults: '25',
           relevanceLanguage: 'en',
-          safeSearch: 'strict',
-          publishedAfter,
         }).catch(() => ({ items: [] }))
       )
     )
@@ -106,7 +106,6 @@ export async function GET(request: Request) {
       }
     }
 
-    // Always clear stale data before inserting new results
     await supabase.from('niche_trends').delete().like('source_url', '%youtube.com%')
 
     if (videoIds.length === 0) {
