@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr:*)",
+      "Bash(where gh:*)",
+      "Bash(winget list:*)",
+      "Bash(\"C:\\\\Program Files\\\\GitHub:*)",
+      "Bash(gh auth:*)",
+      "Bash(\"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" auth status)",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "WebFetch(domain:creator-dashboard-liart.vercel.app)"
+    ]
+  }
+}

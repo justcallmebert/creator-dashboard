@@ -96,8 +96,8 @@ export function useIdeas() {
     return () => { supabase.removeChannel(channel) }
   }, [])
 
-  const addIdea = async (text: string, tags: string[] = []) => {
-    await supabase.from('ideas').insert({ text, tags })
+  const addIdea = async (text: string, tags: string[] = [], url: string | null = null) => {
+    await supabase.from('ideas').insert({ text, tags, url })
   }
 
   const vote = async (id: string, currentVotes: number) => {
