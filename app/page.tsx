@@ -934,8 +934,8 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 font-sans">
-      <div className="sticky top-0 z-20 bg-white dark:bg-neutral-900 pt-6">
+    <div className="w-full max-w-3xl mx-auto px-4 font-sans">
+      <div className="sticky top-0 z-20 bg-white dark:bg-neutral-900 pt-6 w-full">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-lg font-medium">Creator command center</h1>
           <div className="flex items-center gap-2">
