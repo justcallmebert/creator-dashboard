@@ -599,7 +599,16 @@ function TrendsTab({ isEditor }: { isEditor: boolean }) {
 
 export default function Dashboard() {
   const { user, loading, signIn, signOut, isEditor } = useAuth()
-  const [tab, setTab] = useState('Production')
+  const [tab, setTab] = useState(() => {
+    if (typeof window === 'undefined') return 'Production'
+    const hash = window.location.hash.replace('#', '')
+    return TABS.includes(hash) ? hash : 'Production'
+  })
+
+  const switchTab = (t: string) => {
+    setTab(t)
+    window.location.hash = t
+  }
   const [showLogin, setShowLogin] = useState(false)
 
   const renderTab = () => {
@@ -633,7 +642,7 @@ export default function Dashboard() {
       </div>
       <div className="flex gap-1 mb-5 flex-wrap border-b border-neutral-200 dark:border-neutral-700 pb-2.5">
         {TABS.map(t => (
-          <button key={t} onClick={() => setTab(t)}
+          <button key={t} onClick={() => switchTab(t)}
             className={`px-3 py-1.5 rounded-lg text-sm transition ${tab === t
               ? 'bg-neutral-900 dark:bg-white text-white dark:text-black font-medium'
               : 'text-neutral-500 hover:text-neutral-700'}`}>
