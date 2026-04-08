@@ -75,6 +75,7 @@ export async function GET(request: Request) {
     const days = period === '7d' ? 7 : period === '90d' ? 90 : 30
     const minViews = MIN_VIEWS[period] ?? 5_000
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+    const publishedAfter = cutoff.toISOString()
     const now = new Date().toISOString()
 
     // Use order=date + publishedAfter to get recent videos, then sort by views ourselves
