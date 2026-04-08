@@ -430,19 +430,22 @@ function ProductionTab({ isEditor }: { isEditor: boolean }) {
 }
 
 const CONTENT_TAGS = ['Challenge', 'Vlog', 'Adventure', 'Holiday', 'Pretend Play', 'Game', 'Skit']
-const PLATFORMS = ['All', 'YouTube', 'TikTok', 'Reels', 'Ideas']
+const PLATFORMS = ['All', 'YouTube', 'Short', 'TikTok', 'Reel', 'Ideas']
+const IDEA_PLATFORMS = ['YouTube', 'Short', 'TikTok', 'Reel']
 
 const PLATFORM_STYLES: Record<string, { bg: string; text: string }> = {
   YouTube: { bg: 'bg-red-100 dark:bg-red-950', text: 'text-red-600 dark:text-red-400' },
+  Short: { bg: 'bg-orange-100 dark:bg-orange-950', text: 'text-orange-600 dark:text-orange-400' },
   TikTok: { bg: 'bg-neutral-200 dark:bg-neutral-700', text: 'text-neutral-700 dark:text-neutral-200' },
-  Reels: { bg: 'bg-purple-100 dark:bg-purple-950', text: 'text-purple-600 dark:text-purple-400' },
+  Reel: { bg: 'bg-purple-100 dark:bg-purple-950', text: 'text-purple-600 dark:text-purple-400' },
 }
 
-function detectPlatform(url: string): 'YouTube' | 'TikTok' | 'Reels' | null {
+function detectPlatform(url: string): 'YouTube' | 'Short' | 'TikTok' | 'Reel' | null {
   if (!url) return null
+  if (url.includes('youtube.com/shorts/')) return 'Short'
   if (url.includes('youtube.com') || url.includes('youtu.be')) return 'YouTube'
   if (url.includes('tiktok.com')) return 'TikTok'
-  if (url.includes('instagram.com')) return 'Reels'
+  if (url.includes('instagram.com')) return 'Reel'
   return null
 }
 
@@ -452,28 +455,53 @@ function getYouTubeId(url: string): string | null {
 }
 
 function BrainstormTab({ isEditor }: { isEditor: boolean }) {
-  const { ideas, addIdea, vote, deleteIdea } = useIdeas()
+  const { ideas, addIdea, updateIdea, vote, deleteIdea } = useIdeas()
   const [platformFilter, setPlatformFilter] = useState('All')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
+  const [tagsOpen, setTagsOpen] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [newText, setNewText] = useState('')
   const [newUrl, setNewUrl] = useState('')
   const [newTags, setNewTags] = useState<string[]>([])
+  const [newNotes, setNewNotes] = useState('')
+  const [newPlatform, setNewPlatform] = useState('')
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [editing, setEditing] = useState<string | null>(null)
+  const [editData, setEditData] = useState({ text: '', notes: '', tags: [] as string[], platform: '', url: '' })
 
   const detectedPlatform = detectPlatform(newUrl)
 
   const handleAdd = async () => {
     if (!newText.trim()) return
-    await addIdea(newText, newTags, newUrl.trim() || null)
-    setNewText(''); setNewUrl(''); setNewTags([]); setShowForm(false)
+    const platformToSave = newUrl ? detectedPlatform : (newPlatform || null)
+    await addIdea(newText, newTags, newUrl.trim() || null, newNotes.trim() || null, platformToSave)
+    setNewText(''); setNewUrl(''); setNewTags([]); setNewNotes(''); setNewPlatform(''); setShowForm(false)
   }
 
-  const toggleTag = (t: string) => setNewTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])
+  const startEdit = (idea: any) => {
+    setEditing(idea.id)
+    setEditData({ text: idea.text, notes: idea.notes ?? '', tags: idea.tags, platform: idea.platform ?? '', url: idea.url ?? '' })
+  }
+
+  const saveEdit = async (id: string) => {
+    const urlPlatform = editData.url ? detectPlatform(editData.url) : null
+    const platformToSave = editData.url ? urlPlatform : (editData.platform || null)
+    await updateIdea(id, { text: editData.text, notes: editData.notes.trim() || null, tags: editData.tags, platform: platformToSave, url: editData.url.trim() || null })
+    setEditing(null)
+  }
+
+  const toggleExpand = (id: string) => setExpanded(prev => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next
+  })
+
+  const toggleNewTag = (t: string) => setNewTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])
+  const toggleEditTag = (t: string) => setEditData(prev => ({ ...prev, tags: prev.tags.includes(t) ? prev.tags.filter(x => x !== t) : [...prev.tags, t] }))
 
   const filtered = [...ideas]
     .filter(idea => {
-      const platform = idea.url ? detectPlatform(idea.url) : null
-      if (platformFilter === 'Ideas') return !idea.url
+      const urlPlatform = idea.url ? detectPlatform(idea.url) : null
+      const platform = idea.platform ?? urlPlatform
+      if (platformFilter === 'Ideas') return !platform
       if (platformFilter !== 'All') return platform === platformFilter
       return true
     })
@@ -494,16 +522,26 @@ function BrainstormTab({ isEditor }: { isEditor: boolean }) {
         ))}
       </div>
 
-      {/* Content tag filter */}
-      <div className="flex gap-1 mb-4 flex-wrap">
-        {CONTENT_TAGS.map(t => (
-          <button key={t} onClick={() => setTagFilter(tagFilter === t ? null : t)}
-            className={`px-2.5 py-1 rounded-full text-xs transition ${tagFilter === t
-              ? 'bg-blue-600 text-white'
-              : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-500 hover:bg-neutral-200 dark:hover:bg-neutral-700'}`}>
-            {t}
-          </button>
-        ))}
+      {/* Tags collapsible filter */}
+      <div className="mb-4">
+        <button onClick={() => setTagsOpen(v => !v)}
+          className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 mb-1.5">
+          <span>Filter by tag</span>
+          <span className="text-xs">{tagsOpen ? '▲' : '▼'}</span>
+          {tagFilter && <span className="ml-1 text-xs px-2 py-0.5 bg-blue-600 text-white rounded-full">{tagFilter} ×</span>}
+        </button>
+        {tagsOpen && (
+          <div className="flex gap-1.5 flex-wrap">
+            {CONTENT_TAGS.map(t => (
+              <button key={t} onClick={() => setTagFilter(tagFilter === t ? null : t)}
+                className={`px-2.5 py-1 rounded-full text-xs transition ${tagFilter === t
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-500 hover:bg-neutral-200 dark:hover:bg-neutral-700'}`}>
+                {t}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Add form */}
@@ -517,22 +555,36 @@ function BrainstormTab({ isEditor }: { isEditor: boolean }) {
           ) : (
             <div className="bg-neutral-100 dark:bg-neutral-800 rounded-xl p-4 flex flex-col gap-3">
               <input value={newText} onChange={e => setNewText(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleAdd()}
-                placeholder="Idea title or description *"
+                placeholder="Idea title *"
                 className="px-3 py-2 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-full" />
+              <textarea value={newNotes} onChange={e => setNewNotes(e.target.value)}
+                placeholder="Context / notes (optional)"
+                rows={2}
+                className="px-3 py-2 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-full resize-none" />
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-neutral-500">Platform:</span>
+                {IDEA_PLATFORMS.map(p => (
+                  <button key={p} type="button" onClick={() => setNewPlatform(newPlatform === p ? '' : p)}
+                    className={`px-2.5 py-1 rounded-full text-xs transition ${newPlatform === p
+                      ? `${PLATFORM_STYLES[p]?.bg} ${PLATFORM_STYLES[p]?.text} font-medium`
+                      : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-500 hover:bg-neutral-300 dark:hover:bg-neutral-600'}`}>
+                    {p}
+                  </button>
+                ))}
+              </div>
               <div className="relative">
                 <input value={newUrl} onChange={e => setNewUrl(e.target.value)}
                   placeholder="Paste YouTube, TikTok, or Reels link (optional)"
                   className="px-3 py-2 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-full pr-24" />
                 {detectedPlatform && (
-                  <span className={`absolute right-2 top-1/2 -translate-y-1/2 text-[11px] px-2 py-0.5 rounded-full font-medium ${PLATFORM_STYLES[detectedPlatform].bg} ${PLATFORM_STYLES[detectedPlatform].text}`}>
+                  <span className={`absolute right-2 top-1/2 -translate-y-1/2 text-[11px] px-2 py-0.5 rounded-full font-medium ${PLATFORM_STYLES[detectedPlatform]?.bg} ${PLATFORM_STYLES[detectedPlatform]?.text}`}>
                     {detectedPlatform}
                   </span>
                 )}
               </div>
               <div className="flex gap-1.5 flex-wrap">
                 {CONTENT_TAGS.map(t => (
-                  <button key={t} onClick={() => toggleTag(t)}
+                  <button key={t} onClick={() => toggleNewTag(t)}
                     className={`px-2.5 py-1 rounded-full text-xs transition ${newTags.includes(t)
                       ? 'bg-blue-600 text-white'
                       : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-300 dark:hover:bg-neutral-600'}`}>
@@ -545,7 +597,7 @@ function BrainstormTab({ isEditor }: { isEditor: boolean }) {
                   className="px-4 py-1.5 bg-neutral-900 dark:bg-white text-white dark:text-black rounded-lg text-sm font-medium">
                   Add
                 </button>
-                <button onClick={() => { setShowForm(false); setNewText(''); setNewUrl(''); setNewTags([]) }}
+                <button onClick={() => { setShowForm(false); setNewText(''); setNewUrl(''); setNewTags([]); setNewNotes(''); setNewPlatform('') }}
                   className="px-4 py-1.5 border rounded-lg text-sm">
                   Cancel
                 </button>
@@ -555,61 +607,132 @@ function BrainstormTab({ isEditor }: { isEditor: boolean }) {
         </div>
       )}
 
-      {/* Ideas list */}
-      {filtered.map(idea => {
-        const platform = idea.url ? detectPlatform(idea.url) : null
-        const ytId = idea.url ? getYouTubeId(idea.url) : null
-        const ps = platform ? PLATFORM_STYLES[platform] : null
-        return (
-          <div key={idea.id} className="flex gap-3 p-3 mb-2 bg-neutral-100 dark:bg-neutral-800 rounded-xl">
-            {/* Vote button */}
-            <button onClick={() => isEditor && vote(idea.id, idea.votes)} disabled={!isEditor}
-              className={`flex flex-col items-center justify-center min-w-[48px] py-2 px-2 rounded-lg border text-center transition
-                ${isEditor ? 'cursor-pointer hover:bg-neutral-200 dark:hover:bg-neutral-700' : 'cursor-default'}`}>
-              <span className="text-base leading-none">▲</span>
-              <span className="text-sm font-medium leading-tight mt-0.5">{idea.votes}</span>
-              <span className="text-[9px] text-neutral-400 leading-tight">votes</span>
-            </button>
+      {/* Ideas 3-column grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {filtered.map(idea => {
+          const urlPlatform = idea.url ? detectPlatform(idea.url) : null
+          const platform = idea.platform ?? urlPlatform
+          const ytId = idea.url ? getYouTubeId(idea.url) : null
+          const ps = platform ? PLATFORM_STYLES[platform] : null
+          const isExpanded = expanded.has(idea.id)
+          const isEditMode = editing === idea.id
 
-            {/* YouTube thumbnail */}
-            {ytId && (
-              <img src={`https://img.youtube.com/vi/${ytId}/mqdefault.jpg`} alt=""
-                className="w-24 h-16 object-cover rounded-lg flex-shrink-0" />
-            )}
-
-            {/* Content */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-start gap-2 flex-wrap">
-                {platform && ps && (
-                  <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${ps.bg} ${ps.text}`}>
-                    {platform}
-                  </span>
-                )}
-                <div className="text-sm font-medium leading-snug">{idea.text}</div>
-              </div>
-              {idea.url && (
-                <a href={idea.url} target="_blank" rel="noopener noreferrer"
-                  className="text-[11px] text-blue-500 hover:underline truncate block mt-0.5 max-w-xs">
-                  {idea.url}
-                </a>
-              )}
-              {idea.tags.length > 0 && (
-                <div className="flex gap-1 mt-1.5 flex-wrap">
-                  {idea.tags.map(t => (
-                    <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400">{t}</span>
-                  ))}
+          return (
+            <div key={idea.id} className="flex flex-col p-3 bg-neutral-100 dark:bg-neutral-800 rounded-xl">
+              {isEditMode ? (
+                <div className="flex flex-col gap-2">
+                  <input value={editData.text} onChange={e => setEditData(p => ({ ...p, text: e.target.value }))}
+                    className="px-2 py-1.5 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-full" />
+                  <textarea value={editData.notes} onChange={e => setEditData(p => ({ ...p, notes: e.target.value }))}
+                    placeholder="Notes / context"
+                    rows={2}
+                    className="px-2 py-1.5 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-full resize-none" />
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs text-neutral-500">Platform:</span>
+                    {IDEA_PLATFORMS.map(p => (
+                      <button key={p} type="button" onClick={() => setEditData(prev => ({ ...prev, platform: prev.platform === p ? '' : p }))}
+                        className={`px-2 py-0.5 rounded-full text-xs transition ${editData.platform === p
+                          ? `${PLATFORM_STYLES[p]?.bg} ${PLATFORM_STYLES[p]?.text} font-medium`
+                          : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-500'}`}>
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {CONTENT_TAGS.map(t => (
+                      <button key={t} onClick={() => toggleEditTag(t)}
+                        className={`px-2 py-0.5 rounded-full text-xs transition ${editData.tags.includes(t) ? 'bg-blue-600 text-white' : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-500'}`}>
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                  <input value={editData.url} onChange={e => setEditData(p => ({ ...p, url: e.target.value }))}
+                    placeholder="URL (optional)"
+                    className="px-2 py-1.5 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-full" />
+                  <div className="flex gap-2">
+                    <button onClick={() => saveEdit(idea.id)}
+                      className="px-3 py-1 bg-neutral-900 dark:bg-white text-white dark:text-black rounded-lg text-xs font-medium">
+                      Save
+                    </button>
+                    <button onClick={() => setEditing(null)}
+                      className="px-3 py-1 border rounded-lg text-xs">
+                      Cancel
+                    </button>
+                  </div>
                 </div>
-              )}
-              {isEditor && (
-                <button onClick={() => deleteIdea(idea.id)}
-                  className="text-[11px] text-red-500 hover:underline mt-1.5 block">
-                  Delete
-                </button>
+              ) : (
+                <>
+                  {/* Title row with vote button */}
+                  <div className="flex gap-2.5 mb-2">
+                    <button onClick={() => isEditor && vote(idea.id, idea.votes)} disabled={!isEditor}
+                      className={`flex flex-col items-center justify-start min-w-[40px] pt-1 px-1.5 rounded-lg border text-center transition flex-shrink-0
+                        ${isEditor ? 'cursor-pointer hover:bg-neutral-200 dark:hover:bg-neutral-700' : 'cursor-default'}`}>
+                      <span className="text-sm leading-none">▲</span>
+                      <span className="text-sm font-medium leading-tight mt-0.5">{idea.votes}</span>
+                      <span className="text-[9px] text-neutral-400 leading-tight">votes</span>
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                        {platform && ps && (
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${ps.bg} ${ps.text}`}>{platform}</span>
+                        )}
+                        {idea.tags.slice(0, 2).map(t => (
+                          <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400">{t}</span>
+                        ))}
+                        {idea.tags.length > 2 && <span className="text-[10px] text-neutral-400">+{idea.tags.length - 2}</span>}
+                      </div>
+                      <div className="text-sm font-medium leading-snug">{idea.text}</div>
+                    </div>
+                  </div>
+
+                  {/* YouTube thumbnail */}
+                  {ytId && (
+                    <img src={`https://img.youtube.com/vi/${ytId}/mqdefault.jpg`} alt=""
+                      className="w-full h-28 object-cover rounded-lg mb-2 flex-shrink-0" />
+                  )}
+
+                  {/* Expanded: notes + URL */}
+                  {isExpanded && (
+                    <div className="mb-2 pt-2 border-t border-neutral-200 dark:border-neutral-700">
+                      {idea.notes ? (
+                        <p className="text-sm text-neutral-600 dark:text-neutral-300 leading-relaxed">{idea.notes}</p>
+                      ) : (
+                        <p className="text-xs text-neutral-400 italic">No notes added.</p>
+                      )}
+                      {idea.url && (
+                        <a href={idea.url} target="_blank" rel="noopener noreferrer"
+                          className="text-[11px] text-blue-500 hover:underline truncate block mt-1.5">
+                          {idea.url}
+                        </a>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Footer */}
+                  <div className="flex items-center gap-3 mt-auto pt-1">
+                    <button onClick={() => toggleExpand(idea.id)}
+                      className="text-[11px] text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">
+                      {isExpanded ? '▲ Less' : '▼ More'}
+                    </button>
+                    {isEditor && (
+                      <>
+                        <button onClick={() => startEdit(idea)}
+                          className="text-[11px] text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">
+                          Edit
+                        </button>
+                        <button onClick={() => deleteIdea(idea.id)}
+                          className="text-[11px] text-red-400 hover:text-red-600 ml-auto">
+                          Delete
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </>
               )}
             </div>
-          </div>
-        )
-      })}
+          )
+        })}
+      </div>
 
       {filtered.length === 0 && (
         <div className="text-sm text-neutral-400 text-center py-8">No ideas yet for this filter.</div>
