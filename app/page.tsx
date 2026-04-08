@@ -473,20 +473,26 @@ function TrendsTab({ isEditor }: { isEditor: boolean }) {
   const [form, setForm] = useState(BLANK_TREND)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
+  const [syncError, setSyncError] = useState<string | null>(null)
+
+  const runSync = async () => {
+    setSyncing(true)
+    setSyncError(null)
+    try {
+      const res = await fetch('/api/sync-trends')
+      const json = await res.json()
+      if (!res.ok) setSyncError(json.error ?? 'Sync failed')
+    } catch (e: any) {
+      setSyncError(e.message)
+    }
+    setSyncing(false)
+  }
 
   useEffect(() => {
-    if (!loading && trends.length === 0) {
-      setSyncing(true)
-      fetch('/api/sync-trends').catch(console.error).finally(() => setSyncing(false))
-    }
+    if (!loading && trends.length === 0) runSync()
   }, [loading])
 
-  const handleSync = async () => {
-    setSyncing(true)
-    try {
-      await fetch('/api/sync-trends')
-    } catch (e) { console.error(e) }
-    setSyncing(false)
+  const handleSync = () => runSync()
   }
 
   const set = (k: keyof typeof BLANK_TREND, v: string) => setForm(f => ({ ...f, [k]: v }))
@@ -546,7 +552,13 @@ function TrendsTab({ isEditor }: { isEditor: boolean }) {
         </div>
       )}
 
-      {trends.length === 0 && !showForm && (
+      {syncError && (
+        <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-3 mb-4 text-sm text-red-700 dark:text-red-400">
+          Sync error: {syncError}
+        </div>
+      )}
+
+      {trends.length === 0 && !showForm && !syncError && (
         <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-4 text-sm text-neutral-500">
           No trends yet.{isEditor ? ' Click "+ Add trend" to log niche research.' : ''}
         </div>
@@ -599,7 +611,16 @@ function TrendsTab({ isEditor }: { isEditor: boolean }) {
 
 export default function Dashboard() {
   const { user, loading, signIn, signOut, isEditor } = useAuth()
-  const [tab, setTab] = useState('Production')
+  const [tab, setTab] = useState(() => {
+    if (typeof window === 'undefined') return 'Production'
+    const hash = window.location.hash.replace('#', '')
+    return TABS.includes(hash) ? hash : 'Production'
+  })
+
+  const switchTab = (t: string) => {
+    setTab(t)
+    window.location.hash = t
+  }
   const [showLogin, setShowLogin] = useState(false)
 
   const renderTab = () => {
@@ -633,7 +654,7 @@ export default function Dashboard() {
       </div>
       <div className="flex gap-1 mb-5 flex-wrap border-b border-neutral-200 dark:border-neutral-700 pb-2.5">
         {TABS.map(t => (
-          <button key={t} onClick={() => setTab(t)}
+          <button key={t} onClick={() => switchTab(t)}
             className={`px-3 py-1.5 rounded-lg text-sm transition ${tab === t
               ? 'bg-neutral-900 dark:bg-white text-white dark:text-black font-medium'
               : 'text-neutral-500 hover:text-neutral-700'}`}>
