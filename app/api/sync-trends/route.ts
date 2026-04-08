@@ -118,8 +118,13 @@ export async function GET(request: Request) {
     )
     const allVideos = videoResponses.flatMap(r => r.items ?? [])
 
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+
     const entries = allVideos
-      .filter((video: any) => !isExcluded(video.snippet.title, video.snippet.channelTitle))
+      .filter((video: any) => {
+        if (isExcluded(video.snippet.title, video.snippet.channelTitle)) return false
+        return new Date(video.snippet.publishedAt) >= cutoff
+      })
       .map((video: any) => {
         const views = Number(video.statistics?.viewCount ?? 0)
         const likes = Number(video.statistics?.likeCount ?? 0)
