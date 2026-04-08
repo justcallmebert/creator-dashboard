@@ -493,7 +493,6 @@ function TrendsTab({ isEditor }: { isEditor: boolean }) {
   }, [loading])
 
   const handleSync = () => runSync()
-  }
 
   const set = (k: keyof typeof BLANK_TREND, v: string) => setForm(f => ({ ...f, [k]: v }))
 
