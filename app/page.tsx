@@ -429,38 +429,185 @@ function ProductionTab({ isEditor }: { isEditor: boolean }) {
   )
 }
 
+const CONTENT_TAGS = ['Challenge', 'Vlog', 'Adventure', 'Holiday', 'Pretend Play', 'Game', 'Skit']
+const PLATFORMS = ['All', 'YouTube', 'TikTok', 'Reels', 'Ideas']
+
+const PLATFORM_STYLES: Record<string, { bg: string; text: string }> = {
+  YouTube: { bg: 'bg-red-100 dark:bg-red-950', text: 'text-red-600 dark:text-red-400' },
+  TikTok: { bg: 'bg-neutral-200 dark:bg-neutral-700', text: 'text-neutral-700 dark:text-neutral-200' },
+  Reels: { bg: 'bg-purple-100 dark:bg-purple-950', text: 'text-purple-600 dark:text-purple-400' },
+}
+
+function detectPlatform(url: string): 'YouTube' | 'TikTok' | 'Reels' | null {
+  if (!url) return null
+  if (url.includes('youtube.com') || url.includes('youtu.be')) return 'YouTube'
+  if (url.includes('tiktok.com')) return 'TikTok'
+  if (url.includes('instagram.com')) return 'Reels'
+  return null
+}
+
+function getYouTubeId(url: string): string | null {
+  const m = url.match(/(?:v=|youtu\.be\/|shorts\/)([a-zA-Z0-9_-]{11})/)
+  return m?.[1] ?? null
+}
+
 function BrainstormTab({ isEditor }: { isEditor: boolean }) {
   const { ideas, addIdea, vote } = useIdeas()
-  const [newIdea, setNewIdea] = useState('')
-  const sorted = [...ideas].sort((a, b) => b.votes - a.votes)
-  const handleAdd = async () => { if (!newIdea.trim()) return; await addIdea(newIdea); setNewIdea('') }
+  const [platformFilter, setPlatformFilter] = useState('All')
+  const [tagFilter, setTagFilter] = useState<string | null>(null)
+  const [showForm, setShowForm] = useState(false)
+  const [newText, setNewText] = useState('')
+  const [newUrl, setNewUrl] = useState('')
+  const [newTags, setNewTags] = useState<string[]>([])
+
+  const detectedPlatform = detectPlatform(newUrl)
+
+  const handleAdd = async () => {
+    if (!newText.trim()) return
+    await addIdea(newText, newTags, newUrl.trim() || null)
+    setNewText(''); setNewUrl(''); setNewTags([]); setShowForm(false)
+  }
+
+  const toggleTag = (t: string) => setNewTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])
+
+  const filtered = [...ideas]
+    .filter(idea => {
+      const platform = idea.url ? detectPlatform(idea.url) : null
+      if (platformFilter === 'Ideas') return !idea.url
+      if (platformFilter !== 'All') return platform === platformFilter
+      return true
+    })
+    .filter(idea => !tagFilter || idea.tags.includes(tagFilter))
+    .sort((a, b) => b.votes - a.votes)
+
   return (
     <div>
-      {isEditor && (
-        <div className="flex gap-2 mb-5">
-          <input value={newIdea} onChange={e => setNewIdea(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAdd()}
-            placeholder="Drop a content idea..." className="flex-1 px-3 py-2 border rounded-lg text-sm dark:bg-neutral-800 dark:border-neutral-700" />
-          <button onClick={handleAdd} className="px-4 py-2 bg-neutral-900 dark:bg-white text-white dark:text-black rounded-lg text-sm font-medium">Add</button>
-        </div>
-      )}
-      {sorted.map(idea => (
-        <div key={idea.id} className="flex items-center gap-3 p-3 mb-2 bg-neutral-100 dark:bg-neutral-800 rounded-lg">
-          <button onClick={() => isEditor && vote(idea.id, idea.votes)} disabled={!isEditor}
-            className={`px-3 py-1 text-sm rounded-lg border min-w-[44px] ${isEditor ? 'cursor-pointer hover:bg-neutral-200 dark:hover:bg-neutral-700' : 'cursor-default'}`}>
-            {idea.votes}
+      {/* Platform filter */}
+      <div className="flex gap-1 mb-3 flex-wrap">
+        {PLATFORMS.map(p => (
+          <button key={p} onClick={() => setPlatformFilter(p)}
+            className={`px-3 py-1.5 rounded-lg text-sm transition ${platformFilter === p
+              ? 'bg-neutral-900 dark:bg-white text-white dark:text-black font-medium'
+              : 'border border-neutral-200 dark:border-neutral-700 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}>
+            {p}
           </button>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm">{idea.text}</div>
-            {idea.tags.length > 0 && (
-              <div className="flex gap-1 mt-1 flex-wrap">
-                {idea.tags.map(t => (
-                  <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400">{t}</span>
+        ))}
+      </div>
+
+      {/* Content tag filter */}
+      <div className="flex gap-1 mb-4 flex-wrap">
+        {CONTENT_TAGS.map(t => (
+          <button key={t} onClick={() => setTagFilter(tagFilter === t ? null : t)}
+            className={`px-2.5 py-1 rounded-full text-xs transition ${tagFilter === t
+              ? 'bg-blue-600 text-white'
+              : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-500 hover:bg-neutral-200 dark:hover:bg-neutral-700'}`}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {/* Add form */}
+      {isEditor && (
+        <div className="mb-5">
+          {!showForm ? (
+            <button onClick={() => setShowForm(true)}
+              className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800">
+              + Add idea
+            </button>
+          ) : (
+            <div className="bg-neutral-100 dark:bg-neutral-800 rounded-xl p-4 flex flex-col gap-3">
+              <input value={newText} onChange={e => setNewText(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAdd()}
+                placeholder="Idea title or description *"
+                className="px-3 py-2 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-full" />
+              <div className="relative">
+                <input value={newUrl} onChange={e => setNewUrl(e.target.value)}
+                  placeholder="Paste YouTube, TikTok, or Reels link (optional)"
+                  className="px-3 py-2 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-full pr-24" />
+                {detectedPlatform && (
+                  <span className={`absolute right-2 top-1/2 -translate-y-1/2 text-[11px] px-2 py-0.5 rounded-full font-medium ${PLATFORM_STYLES[detectedPlatform].bg} ${PLATFORM_STYLES[detectedPlatform].text}`}>
+                    {detectedPlatform}
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-1.5 flex-wrap">
+                {CONTENT_TAGS.map(t => (
+                  <button key={t} onClick={() => toggleTag(t)}
+                    className={`px-2.5 py-1 rounded-full text-xs transition ${newTags.includes(t)
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-300 dark:hover:bg-neutral-600'}`}>
+                    {t}
+                  </button>
                 ))}
               </div>
-            )}
-          </div>
+              <div className="flex gap-2">
+                <button onClick={handleAdd}
+                  className="px-4 py-1.5 bg-neutral-900 dark:bg-white text-white dark:text-black rounded-lg text-sm font-medium">
+                  Add
+                </button>
+                <button onClick={() => { setShowForm(false); setNewText(''); setNewUrl(''); setNewTags([]) }}
+                  className="px-4 py-1.5 border rounded-lg text-sm">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </div>
-      ))}
+      )}
+
+      {/* Ideas list */}
+      {filtered.map(idea => {
+        const platform = idea.url ? detectPlatform(idea.url) : null
+        const ytId = idea.url ? getYouTubeId(idea.url) : null
+        const ps = platform ? PLATFORM_STYLES[platform] : null
+        return (
+          <div key={idea.id} className="flex gap-3 p-3 mb-2 bg-neutral-100 dark:bg-neutral-800 rounded-xl">
+            {/* Vote button */}
+            <button onClick={() => isEditor && vote(idea.id, idea.votes)} disabled={!isEditor}
+              className={`flex flex-col items-center justify-center min-w-[48px] py-2 px-2 rounded-lg border text-center transition
+                ${isEditor ? 'cursor-pointer hover:bg-neutral-200 dark:hover:bg-neutral-700' : 'cursor-default'}`}>
+              <span className="text-base leading-none">▲</span>
+              <span className="text-sm font-medium leading-tight mt-0.5">{idea.votes}</span>
+              <span className="text-[9px] text-neutral-400 leading-tight">votes</span>
+            </button>
+
+            {/* YouTube thumbnail */}
+            {ytId && (
+              <img src={`https://img.youtube.com/vi/${ytId}/mqdefault.jpg`} alt=""
+                className="w-24 h-16 object-cover rounded-lg flex-shrink-0" />
+            )}
+
+            {/* Content */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start gap-2 flex-wrap">
+                {platform && ps && (
+                  <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${ps.bg} ${ps.text}`}>
+                    {platform}
+                  </span>
+                )}
+                <div className="text-sm font-medium leading-snug">{idea.text}</div>
+              </div>
+              {idea.url && (
+                <a href={idea.url} target="_blank" rel="noopener noreferrer"
+                  className="text-[11px] text-blue-500 hover:underline truncate block mt-0.5 max-w-xs">
+                  {idea.url}
+                </a>
+              )}
+              {idea.tags.length > 0 && (
+                <div className="flex gap-1 mt-1.5 flex-wrap">
+                  {idea.tags.map(t => (
+                    <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400">{t}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })}
+
+      {filtered.length === 0 && (
+        <div className="text-sm text-neutral-400 text-center py-8">No ideas yet for this filter.</div>
+      )}
     </div>
   )
 }

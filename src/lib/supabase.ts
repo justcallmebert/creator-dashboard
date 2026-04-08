@@ -24,6 +24,7 @@ export type Idea = {
   votes: number
   created_by: string | null
   created_at: string
+  url: string | null
 }
 
 export type CalendarEvent = {
