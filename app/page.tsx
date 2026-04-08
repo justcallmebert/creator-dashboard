@@ -467,6 +467,13 @@ function BrainstormTab({ isEditor }: { isEditor: boolean }) {
 
 const BLANK_TREND = { title: '', creator: '', views: '', demographic: '', insight: '', source_url: '' }
 
+type Period = '7d' | '30d' | '90d'
+const PERIODS: { id: Period; label: string }[] = [
+  { id: '7d', label: '7 days' },
+  { id: '30d', label: '30 days' },
+  { id: '90d', label: '90 days' },
+]
+
 function TrendsTab({ isEditor }: { isEditor: boolean }) {
   const { trends, loading, addTrend, deleteTrend } = useTrends()
   const [showForm, setShowForm] = useState(false)
@@ -474,12 +481,13 @@ function TrendsTab({ isEditor }: { isEditor: boolean }) {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
+  const [period, setPeriod] = useState<Period>('30d')
 
-  const runSync = async () => {
+  const runSync = async (p: Period = period) => {
     setSyncing(true)
     setSyncError(null)
     try {
-      const res = await fetch('/api/sync-trends')
+      const res = await fetch(`/api/sync-trends?period=${p}`)
       const json = await res.json()
       if (!res.ok) setSyncError(json.error ?? 'Sync failed')
     } catch (e: any) {
@@ -489,10 +497,13 @@ function TrendsTab({ isEditor }: { isEditor: boolean }) {
   }
 
   useEffect(() => {
-    if (!loading && trends.length === 0) runSync()
+    if (!loading) runSync(period)
   }, [loading])
 
-  const handleSync = () => runSync()
+  const handlePeriodChange = (p: Period) => {
+    setPeriod(p)
+    runSync(p)
+  }
 
   const set = (k: keyof typeof BLANK_TREND, v: string) => setForm(f => ({ ...f, [k]: v }))
 
@@ -514,18 +525,30 @@ function TrendsTab({ isEditor }: { isEditor: boolean }) {
 
   return (
     <div>
-      {isEditor && (
-        <div className="flex gap-2 mb-4">
-          <button onClick={() => setShowForm(!showForm)}
-            className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800">
-            {showForm ? 'Cancel' : '+ Add trend'}
-          </button>
-          <button onClick={handleSync} disabled={syncing}
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div className="flex gap-1">
+          {PERIODS.map(p => (
+            <button key={p.id} onClick={() => handlePeriodChange(p.id)} disabled={syncing}
+              className={`px-3 py-1.5 rounded-lg text-sm transition disabled:opacity-50 ${period === p.id
+                ? 'bg-neutral-900 dark:bg-white text-white dark:text-black font-medium'
+                : 'border border-neutral-200 dark:border-neutral-700 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => runSync(period)} disabled={syncing}
             className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-50">
             {syncing ? 'Syncing...' : 'Sync from YouTube'}
           </button>
+          {isEditor && (
+            <button onClick={() => setShowForm(!showForm)}
+              className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800">
+              {showForm ? 'Cancel' : '+ Add trend'}
+            </button>
+          )}
         </div>
-      )}
+      </div>
 
       {showForm && isEditor && (
         <div className="bg-neutral-100 dark:bg-neutral-800 rounded-xl p-4 mb-5 flex flex-col gap-3">
