@@ -611,11 +611,12 @@ function TrendsTab({ isEditor }: { isEditor: boolean }) {
 
 export default function Dashboard() {
   const { user, loading, signIn, signOut, isEditor } = useAuth()
-  const [tab, setTab] = useState(() => {
-    if (typeof window === 'undefined') return 'Production'
+  const [tab, setTab] = useState('Production')
+
+  useEffect(() => {
     const hash = window.location.hash.replace('#', '')
-    return TABS.includes(hash) ? hash : 'Production'
-  })
+    if (TABS.includes(hash)) setTab(hash)
+  }, [])
 
   const switchTab = (t: string) => {
     setTab(t)

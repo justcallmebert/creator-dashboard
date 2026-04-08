@@ -7,8 +7,36 @@ const supabase = createClient(
 )
 
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY!
-const ADLEY_CHANNEL_ID = 'UCBJuxfqZuiibvcwSc8ViGsQ'
 const BASE = 'https://www.googleapis.com/youtube/v3'
+
+// Channels to exclude from trend results (their own channels)
+const EXCLUDED_CHANNEL_NAMES = new Set([
+  'A for Adley- Learning & Fun',
+  'A for Adley',
+  'Shonduras',
+  'Spacestation Animation',
+  'G for Gaming',
+])
+
+// Content that's too young for Adley at 11
+const EXCLUDED_KEYWORDS = [
+  'nursery rhyme', 'nursery rhymes', 'baby song', 'lullaby', 'lullabies',
+  'toddler', 'baby learn', 'abc song', 'phonics', 'counting song',
+]
+
+// Search queries derived from their top-performing video tags
+const SEARCH_QUERIES = [
+  'floor is lava challenge kids',
+  'family fun challenge pretend play',
+  'hide and seek challenge kids',
+  'cops and robbers kids adventure',
+  'last to leave challenge family',
+  'mystery cafe challenge kids',
+  'trick or treat halloween kids challenge',
+  'family game challenge leprechaun',
+  'pirate adventure challenge kids',
+  'roblox family challenge irl',
+]
 
 async function ytFetch(endpoint: string, params: Record<string, string>) {
   const url = new URL(`${BASE}/${endpoint}`)
@@ -25,50 +53,40 @@ function fmtViews(n: number) {
   return n.toLocaleString()
 }
 
+function isExcluded(title: string, channelTitle: string) {
+  if (EXCLUDED_CHANNEL_NAMES.has(channelTitle)) return true
+  const lower = title.toLowerCase()
+  return EXCLUDED_KEYWORDS.some(kw => lower.includes(kw))
+}
+
 export async function GET() {
   try {
-    // Get Adley channel metadata for topic categories and keywords
-    const channelData = await ytFetch('channels', {
-      part: 'topicDetails,brandingSettings',
-      id: ADLEY_CHANNEL_ID,
-    })
+    const now = new Date().toISOString()
 
-    const channel = channelData.items?.[0]
-    const keywords: string[] = channel?.brandingSettings?.channel?.keywords
-      ?.split(/\s+(?=(?:[^"]*"[^"]*")*[^"]*$)/)
-      .map((k: string) => k.replace(/"/g, '').trim())
-      .filter(Boolean)
-      .slice(0, 5) ?? []
-
-    // Build search queries: channel keywords + core niche terms
-    const nicheTerms = ['kids youtube', 'family fun kids', 'for kids games', 'children activities']
-    const queries = [
-      ...keywords.map(k => `${k} kids`),
-      ...nicheTerms,
-    ].slice(0, 6) // cap to stay within quota
-
-    // Search YouTube for top-performing videos across these queries
+    // Run searches in parallel (cap at 8 to stay within quota)
     const searchResults = await Promise.all(
-      queries.map(q =>
+      SEARCH_QUERIES.slice(0, 8).map(q =>
         ytFetch('search', {
           part: 'id,snippet',
           q,
           type: 'video',
           order: 'viewCount',
-          maxResults: '5',
+          maxResults: '8',
           relevanceLanguage: 'en',
           safeSearch: 'strict',
+          videoCategoryId: '22', // People & Blogs (family/kids content)
         }).catch(() => ({ items: [] }))
       )
     )
 
-    // Collect unique video IDs
+    // Deduplicate and pre-filter by channel name
     const seenIds = new Set<string>()
     const videoIds: string[] = []
     for (const result of searchResults) {
       for (const item of result.items ?? []) {
         const id = item.id?.videoId
-        if (id && !seenIds.has(id)) {
+        const channelTitle = item.snippet?.channelTitle ?? ''
+        if (id && !seenIds.has(id) && !EXCLUDED_CHANNEL_NAMES.has(channelTitle)) {
           seenIds.add(id)
           videoIds.push(id)
         }
@@ -79,15 +97,23 @@ export async function GET() {
       return NextResponse.json({ error: 'No videos found' }, { status: 404 })
     }
 
-    // Fetch stats for all videos in one call
-    const videoData = await ytFetch('videos', {
-      part: 'statistics,snippet,topicDetails',
-      id: videoIds.join(','),
-    })
+    // Fetch full stats in batches of 50
+    const batches = []
+    for (let i = 0; i < videoIds.length; i += 50) {
+      batches.push(videoIds.slice(i, i + 50))
+    }
+    const videoResponses = await Promise.all(
+      batches.map(batch =>
+        ytFetch('videos', {
+          part: 'statistics,snippet,topicDetails',
+          id: batch.join(','),
+        })
+      )
+    )
+    const allVideos = videoResponses.flatMap(r => r.items ?? [])
 
-    const now = new Date().toISOString()
-
-    const entries = (videoData.items ?? [])
+    const entries = allVideos
+      .filter((video: any) => !isExcluded(video.snippet.title, video.snippet.channelTitle))
       .map((video: any) => {
         const views = Number(video.statistics?.viewCount ?? 0)
         const likes = Number(video.statistics?.likeCount ?? 0)
@@ -107,20 +133,14 @@ export async function GET() {
           insight: `${engagement}% engagement · ${fmtViews(likes)} likes · published ${new Date(video.snippet.publishedAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`,
           source_url: `https://www.youtube.com/watch?v=${video.id}`,
           added_at: now,
+          _views_raw: views,
         }
       })
-      .sort((a: any, b: any) => {
-        // Sort by raw view count descending
-        const parseViews = (s: string) => {
-          if (s.endsWith('M')) return parseFloat(s) * 1_000_000
-          if (s.endsWith('K')) return parseFloat(s) * 1_000
-          return parseFloat(s.replace(/,/g, '')) || 0
-        }
-        return parseViews(b.views) - parseViews(a.views)
-      })
+      .sort((a: any, b: any) => b._views_raw - a._views_raw)
       .slice(0, 20)
+      .map(({ _views_raw, ...e }: any) => e)
 
-    // Delete previous auto-synced entries (identified by youtube.com source_url)
+    // Replace previous auto-synced entries
     await supabase.from('niche_trends').delete().like('source_url', '%youtube.com%')
 
     const { error } = await supabase.from('niche_trends').insert(entries)
@@ -129,7 +149,6 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       synced: entries.length,
-      queries,
       top3: entries.slice(0, 3).map((e: any) => ({ title: e.title, creator: e.creator, views: e.views })),
     })
   } catch (error: any) {
