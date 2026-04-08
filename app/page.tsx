@@ -472,6 +472,22 @@ function TrendsTab({ isEditor }: { isEditor: boolean }) {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(BLANK_TREND)
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
+
+  useEffect(() => {
+    if (!loading && trends.length === 0) {
+      setSyncing(true)
+      fetch('/api/sync-trends').catch(console.error).finally(() => setSyncing(false))
+    }
+  }, [loading])
+
+  const handleSync = async () => {
+    setSyncing(true)
+    try {
+      await fetch('/api/sync-trends')
+    } catch (e) { console.error(e) }
+    setSyncing(false)
+  }
 
   const set = (k: keyof typeof BLANK_TREND, v: string) => setForm(f => ({ ...f, [k]: v }))
 
@@ -489,15 +505,19 @@ function TrendsTab({ isEditor }: { isEditor: boolean }) {
     setShowForm(false)
   }
 
-  if (loading) return <div className="text-sm text-neutral-400">Loading trends...</div>
+  if (loading || (syncing && trends.length === 0)) return <div className="text-sm text-neutral-400">Loading trends...</div>
 
   return (
     <div>
       {isEditor && (
-        <div className="mb-4">
+        <div className="flex gap-2 mb-4">
           <button onClick={() => setShowForm(!showForm)}
             className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800">
             {showForm ? 'Cancel' : '+ Add trend'}
+          </button>
+          <button onClick={handleSync} disabled={syncing}
+            className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-50">
+            {syncing ? 'Syncing...' : 'Sync from YouTube'}
           </button>
         </div>
       )}
