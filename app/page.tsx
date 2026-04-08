@@ -430,7 +430,7 @@ function ProductionTab({ isEditor }: { isEditor: boolean }) {
 }
 
 const CONTENT_TAGS = ['Challenge', 'Vlog', 'Adventure', 'Holiday', 'Pretend Play', 'Game', 'Skit']
-const PLATFORMS = ['All', 'YouTube', 'Short', 'TikTok', 'Reel', 'Ideas']
+const PLATFORMS = ['All', 'YouTube', 'Short', 'TikTok', 'Reel']
 const IDEA_PLATFORMS = ['YouTube', 'Short', 'TikTok', 'Reel']
 
 const PLATFORM_STYLES: Record<string, { bg: string; text: string }> = {
@@ -501,7 +501,6 @@ function BrainstormTab({ isEditor }: { isEditor: boolean }) {
     .filter(idea => {
       const urlPlatform = idea.url ? detectPlatform(idea.url) : null
       const platform = idea.platform ?? urlPlatform
-      if (platformFilter === 'Ideas') return !platform
       if (platformFilter !== 'All') return platform === platformFilter
       return true
     })
