@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase, Video, Idea, CalendarEvent } from './supabase'
+import { supabase, Video, Idea, CalendarEvent, NicheTrend } from './supabase'
 
 export function useAuth() {
   const [user, setUser] = useState<any>(null)
@@ -146,4 +146,39 @@ export function useEvents() {
   }
 
   return { events, loading, addEvent, deleteEvent }
+}
+
+export function useTrends() {
+  const [trends, setTrends] = useState<NicheTrend[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    supabase.from('niche_trends').select('*').order('added_at', { ascending: false }).then(({ data }) => {
+      if (data) setTrends(data)
+      setLoading(false)
+    })
+
+    const channel = supabase
+      .channel('trends-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'niche_trends' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          setTrends(prev => [payload.new as NicheTrend, ...prev])
+        } else if (payload.eventType === 'DELETE') {
+          setTrends(prev => prev.filter(t => t.id !== (payload.old as NicheTrend).id))
+        }
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [])
+
+  const addTrend = async (trend: Omit<NicheTrend, 'id' | 'added_at'>) => {
+    await supabase.from('niche_trends').insert(trend)
+  }
+
+  const deleteTrend = async (id: string) => {
+    await supabase.from('niche_trends').delete().eq('id', id)
+  }
+
+  return { trends, loading, addTrend, deleteTrend }
 }

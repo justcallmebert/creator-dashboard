@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAuth, useVideos, useIdeas, useEvents } from '@/src/lib/hooks'
+import { useAuth, useVideos, useIdeas, useEvents, useTrends } from '@/src/lib/hooks'
 import { STAGES, supabase } from '@/src/lib/supabase'
 
 const TABS = ['Analytics', 'Production', 'Brainstorm', 'Performance', 'Trends']
@@ -465,10 +465,114 @@ function BrainstormTab({ isEditor }: { isEditor: boolean }) {
   )
 }
 
-function TrendsTab() {
+const BLANK_TREND = { title: '', creator: '', views: '', demographic: '', insight: '', source_url: '' }
+
+function TrendsTab({ isEditor }: { isEditor: boolean }) {
+  const { trends, loading, addTrend, deleteTrend } = useTrends()
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState(BLANK_TREND)
+  const [expanded, setExpanded] = useState<string | null>(null)
+
+  const set = (k: keyof typeof BLANK_TREND, v: string) => setForm(f => ({ ...f, [k]: v }))
+
+  const handleAdd = async () => {
+    if (!form.title.trim()) return
+    await addTrend({
+      title: form.title,
+      creator: form.creator || null,
+      views: form.views || null,
+      demographic: form.demographic || null,
+      insight: form.insight || null,
+      source_url: form.source_url || null,
+    })
+    setForm(BLANK_TREND)
+    setShowForm(false)
+  }
+
+  if (loading) return <div className="text-sm text-neutral-400">Loading trends...</div>
+
   return (
-    <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-4 text-sm text-neutral-500">
-      Add trending niche research here — either manually or by connecting a research API. Each entry can include the creator, view count, demographic breakdown, and tactical insights.
+    <div>
+      {isEditor && (
+        <div className="mb-4">
+          <button onClick={() => setShowForm(!showForm)}
+            className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800">
+            {showForm ? 'Cancel' : '+ Add trend'}
+          </button>
+        </div>
+      )}
+
+      {showForm && isEditor && (
+        <div className="bg-neutral-100 dark:bg-neutral-800 rounded-xl p-4 mb-5 flex flex-col gap-3">
+          <div className="text-sm font-medium mb-1">New trend entry</div>
+          <input placeholder="Title / topic *" value={form.title} onChange={e => set('title', e.target.value)}
+            className="px-3 py-2 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-full" />
+          <div className="grid grid-cols-2 gap-2">
+            <input placeholder="Creator / channel" value={form.creator} onChange={e => set('creator', e.target.value)}
+              className="px-3 py-2 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700" />
+            <input placeholder="View count (e.g. 2.4M)" value={form.views} onChange={e => set('views', e.target.value)}
+              className="px-3 py-2 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700" />
+          </div>
+          <input placeholder="Target demographic" value={form.demographic} onChange={e => set('demographic', e.target.value)}
+            className="px-3 py-2 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-full" />
+          <textarea placeholder="Tactical insight — what made this work?" value={form.insight} onChange={e => set('insight', e.target.value)}
+            rows={3} className="px-3 py-2 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-full resize-none" />
+          <input placeholder="Source URL (optional)" value={form.source_url} onChange={e => set('source_url', e.target.value)}
+            className="px-3 py-2 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-full" />
+          <button onClick={handleAdd}
+            className="self-start px-4 py-2 bg-neutral-900 dark:bg-white text-white dark:text-black rounded-lg text-sm font-medium">
+            Save
+          </button>
+        </div>
+      )}
+
+      {trends.length === 0 && !showForm && (
+        <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-4 text-sm text-neutral-500">
+          No trends yet.{isEditor ? ' Click "+ Add trend" to log niche research.' : ''}
+        </div>
+      )}
+
+      {trends.map(t => {
+        const isOpen = expanded === t.id
+        return (
+          <div key={t.id} className="mb-2 bg-neutral-100 dark:bg-neutral-800 rounded-xl overflow-hidden">
+            <button className="w-full flex items-center gap-3 p-3 text-left" onClick={() => setExpanded(isOpen ? null : t.id)}>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium truncate">{t.title}</div>
+                <div className="flex gap-3 mt-0.5 flex-wrap">
+                  {t.creator && <span className="text-xs text-neutral-500">{t.creator}</span>}
+                  {t.views && <span className="text-xs text-neutral-500">{t.views} views</span>}
+                  {t.demographic && <span className="text-xs text-blue-500 dark:text-blue-400">{t.demographic}</span>}
+                </div>
+              </div>
+              <span className="text-neutral-400 text-xs">{isOpen ? '▲' : '▼'}</span>
+            </button>
+
+            {isOpen && (
+              <div className="px-4 pb-4 border-t border-neutral-200 dark:border-neutral-700 pt-3">
+                {t.insight && (
+                  <div className="mb-3">
+                    <div className="text-[11px] text-neutral-400 uppercase tracking-wide mb-1">Insight</div>
+                    <div className="text-sm text-neutral-700 dark:text-neutral-300 whitespace-pre-wrap">{t.insight}</div>
+                  </div>
+                )}
+                {t.source_url && (
+                  <a href={t.source_url} target="_blank" rel="noopener noreferrer"
+                    className="text-xs text-blue-500 hover:underline break-all">
+                    {t.source_url}
+                  </a>
+                )}
+                {isEditor && (
+                  <button onClick={() => deleteTrend(t.id)}
+                    className="mt-3 text-xs text-red-500 hover:underline block">
+                    Delete
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -484,7 +588,7 @@ export default function Dashboard() {
       case 'Production': return <ProductionTab isEditor={isEditor} />
       case 'Brainstorm': return <BrainstormTab isEditor={isEditor} />
       case 'Performance': return <PerformanceTab />
-      case 'Trends': return <TrendsTab />
+      case 'Trends': return <TrendsTab isEditor={isEditor} />
       default: return null
     }
   }
