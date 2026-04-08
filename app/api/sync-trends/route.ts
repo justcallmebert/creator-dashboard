@@ -34,9 +34,9 @@ const SEARCH_QUERIES = [
 ]
 
 const MIN_VIEWS: Record<string, number> = {
-  '7d': 1_000,
-  '30d': 5_000,
-  '90d': 20_000,
+  '7d': 500,
+  '30d': 2_000,
+  '90d': 5_000,
 }
 
 // Only compare actual letters, ignoring emojis/numbers/punctuation
@@ -77,18 +77,17 @@ export async function GET(request: Request) {
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
     const now = new Date().toISOString()
 
-    // Search by viewCount without publishedAfter — YouTube ignores publishedAfter
-    // when combined with relevance/viewCount ordering, returning zero results.
-    // Instead we fetch top results and filter strictly by publishedAt after.
+    // Use order=date + publishedAfter to get recent videos, then sort by views ourselves
     const searchResults = await Promise.all(
       SEARCH_QUERIES.map(q =>
         ytFetch('search', {
           part: 'id,snippet',
           q,
           type: 'video',
-          order: 'viewCount',
+          order: 'date',
           maxResults: '25',
           relevanceLanguage: 'en',
+          publishedAfter,
         }).catch(() => ({ items: [] }))
       )
     )
