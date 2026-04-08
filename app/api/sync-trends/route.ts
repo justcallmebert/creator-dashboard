@@ -75,11 +75,10 @@ export async function GET(request: Request) {
           part: 'id,snippet',
           q,
           type: 'video',
-          order: 'viewCount',
-          maxResults: '8',
+          order: 'date',
+          maxResults: '15',
           relevanceLanguage: 'en',
           safeSearch: 'strict',
-          videoCategoryId: '22', // People & Blogs (family/kids content)
           publishedAfter,
         }).catch(() => ({ items: [] }))
       )
@@ -147,7 +146,7 @@ export async function GET(request: Request) {
           _views_raw: views,
         }
       })
-      .sort((a: any, b: any) => b._views_raw - a._views_raw)
+      .sort((a: any, b: any) => b._views_raw - a._views_raw)  // sort by views after date-filtering
       .slice(0, 20)
       .map(({ _views_raw, ...e }: any) => e)
 
