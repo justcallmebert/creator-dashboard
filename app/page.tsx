@@ -473,20 +473,26 @@ function TrendsTab({ isEditor }: { isEditor: boolean }) {
   const [form, setForm] = useState(BLANK_TREND)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
+  const [syncError, setSyncError] = useState<string | null>(null)
+
+  const runSync = async () => {
+    setSyncing(true)
+    setSyncError(null)
+    try {
+      const res = await fetch('/api/sync-trends')
+      const json = await res.json()
+      if (!res.ok) setSyncError(json.error ?? 'Sync failed')
+    } catch (e: any) {
+      setSyncError(e.message)
+    }
+    setSyncing(false)
+  }
 
   useEffect(() => {
-    if (!loading && trends.length === 0) {
-      setSyncing(true)
-      fetch('/api/sync-trends').catch(console.error).finally(() => setSyncing(false))
-    }
+    if (!loading && trends.length === 0) runSync()
   }, [loading])
 
-  const handleSync = async () => {
-    setSyncing(true)
-    try {
-      await fetch('/api/sync-trends')
-    } catch (e) { console.error(e) }
-    setSyncing(false)
+  const handleSync = () => runSync()
   }
 
   const set = (k: keyof typeof BLANK_TREND, v: string) => setForm(f => ({ ...f, [k]: v }))
@@ -546,7 +552,13 @@ function TrendsTab({ isEditor }: { isEditor: boolean }) {
         </div>
       )}
 
-      {trends.length === 0 && !showForm && (
+      {syncError && (
+        <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-3 mb-4 text-sm text-red-700 dark:text-red-400">
+          Sync error: {syncError}
+        </div>
+      )}
+
+      {trends.length === 0 && !showForm && !syncError && (
         <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-4 text-sm text-neutral-500">
           No trends yet.{isEditor ? ' Click "+ Add trend" to log niche research.' : ''}
         </div>
