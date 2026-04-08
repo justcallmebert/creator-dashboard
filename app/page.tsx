@@ -452,7 +452,7 @@ function getYouTubeId(url: string): string | null {
 }
 
 function BrainstormTab({ isEditor }: { isEditor: boolean }) {
-  const { ideas, addIdea, vote } = useIdeas()
+  const { ideas, addIdea, vote, deleteIdea } = useIdeas()
   const [platformFilter, setPlatformFilter] = useState('All')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
@@ -599,6 +599,12 @@ function BrainstormTab({ isEditor }: { isEditor: boolean }) {
                     <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400">{t}</span>
                   ))}
                 </div>
+              )}
+              {isEditor && (
+                <button onClick={() => deleteIdea(idea.id)}
+                  className="text-[11px] text-red-500 hover:underline mt-1.5 block">
+                  Delete
+                </button>
               )}
             </div>
           </div>
