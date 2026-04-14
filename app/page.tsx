@@ -468,6 +468,18 @@ function BrainstormTab({ isEditor }: { isEditor: boolean }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [editing, setEditing] = useState<string | null>(null)
   const [editData, setEditData] = useState({ text: '', notes: '', tags: [] as string[], platform: '', url: '' })
+  const [votedIds, setVotedIds] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set()
+    try { return new Set(JSON.parse(localStorage.getItem('voted_ideas') ?? '[]')) } catch { return new Set() }
+  })
+
+  const handleVote = (id: string, currentVotes: number) => {
+    if (votedIds.has(id)) return
+    vote(id, currentVotes)
+    const next = new Set(votedIds).add(id)
+    setVotedIds(next)
+    localStorage.setItem('voted_ideas', JSON.stringify([...next]))
+  }
 
   const detectedPlatform = detectPlatform(newUrl)
 
@@ -663,13 +675,22 @@ function BrainstormTab({ isEditor }: { isEditor: boolean }) {
                 <>
                   {/* Title row with vote button */}
                   <div className="flex gap-2.5 mb-2">
-                    <button onClick={() => isEditor && vote(idea.id, idea.votes)} disabled={!isEditor}
-                      className={`flex flex-col items-center justify-start min-w-[40px] pt-1 px-1.5 rounded-lg border text-center transition flex-shrink-0
-                        ${isEditor ? 'cursor-pointer hover:bg-neutral-200 dark:hover:bg-neutral-700' : 'cursor-default'}`}>
-                      <span className="text-sm leading-none">▲</span>
-                      <span className="text-sm font-medium leading-tight mt-0.5">{idea.votes}</span>
-                      <span className="text-[9px] text-neutral-400 leading-tight">votes</span>
-                    </button>
+                    {(() => {
+                      const hasVoted = votedIds.has(idea.id)
+                      return (
+                        <button onClick={() => !hasVoted && handleVote(idea.id, idea.votes)}
+                          disabled={hasVoted}
+                          title={hasVoted ? 'Already voted' : 'Vote'}
+                          className={`flex flex-col items-center justify-start min-w-[40px] pt-1 px-1.5 rounded-lg border text-center transition flex-shrink-0
+                            ${hasVoted
+                              ? 'bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800 cursor-default'
+                              : 'cursor-pointer hover:bg-neutral-200 dark:hover:bg-neutral-700'}`}>
+                          <span className={`text-sm leading-none ${hasVoted ? 'text-blue-500' : ''}`}>▲</span>
+                          <span className={`text-sm font-medium leading-tight mt-0.5 ${hasVoted ? 'text-blue-500' : ''}`}>{idea.votes}</span>
+                          <span className="text-[9px] text-neutral-400 leading-tight">votes</span>
+                        </button>
+                      )
+                    })()}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap mb-1">
                         {platform && ps && (
