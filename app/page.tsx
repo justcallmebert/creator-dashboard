@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAuth, useVideos, useIdeas, useEvents, useTrends } from '@/src/lib/hooks'
+import { useAuth, useVideos, useIdeas, useEvents, useTrends, useWhiteboardSnapshots } from '@/src/lib/hooks'
 import { STAGES, supabase } from '@/src/lib/supabase'
 
-const TABS = ['Analytics', 'Production', 'Brainstorm', 'Performance', 'Trends']
+const TABS = ['Analytics', 'Production', 'Brainstorm', 'Performance', 'Trends', 'Whiteboard']
 
 function LoginModal({ onLogin, onClose }: { onLogin: (e: string, p: string) => Promise<any>, onClose: () => void }) {
   const [email, setEmail] = useState('')
@@ -906,6 +906,160 @@ function TrendsTab({ isEditor }: { isEditor: boolean }) {
   )
 }
 
+function WhiteboardTab({ isEditor }: { isEditor: boolean }) {
+  const { snapshots, loading, addSnapshot, updateSnapshot, deleteSnapshot } = useWhiteboardSnapshots()
+  const [uploading, setUploading] = useState(false)
+  const [extracting, setExtracting] = useState(false)
+  const [capturedAt, setCapturedAt] = useState(new Date().toISOString().split('T')[0])
+  const [notes, setNotes] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editNotes, setEditNotes] = useState('')
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [statusMsg, setStatusMsg] = useState('')
+
+  const handleUpload = async (file: File) => {
+    if (!file) return
+    setUploading(true)
+    setStatusMsg('Uploading photo...')
+
+    const ext = file.name.split('.').pop()
+    const path = `${Date.now()}.${ext}`
+    const { data: uploadData, error: uploadError } = await (await import('@/src/lib/supabase')).supabase
+      .storage.from('whiteboard-photos').upload(path, file, { contentType: file.type })
+
+    if (uploadError) {
+      setStatusMsg('Upload failed: ' + uploadError.message)
+      setUploading(false)
+      return
+    }
+
+    const { data: { publicUrl } } = (await import('@/src/lib/supabase')).supabase
+      .storage.from('whiteboard-photos').getPublicUrl(path)
+
+    setStatusMsg('Extracting text with AI...')
+    setExtracting(true)
+    let extracted: string | null = null
+    try {
+      const res = await fetch('/api/extract-whiteboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: publicUrl }),
+      })
+      const json = await res.json()
+      extracted = json.extracted ?? null
+    } catch (e) {
+      // extraction optional — don't block save
+    }
+    setExtracting(false)
+
+    await addSnapshot({ image_url: publicUrl, captured_at: capturedAt, extracted_text: extracted, notes: notes.trim() || null })
+    setNotes('')
+    setStatusMsg('')
+    setUploading(false)
+  }
+
+  const fmt = (dateStr: string) => new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+
+  return (
+    <div>
+      {isEditor && (
+        <div className="mb-6 bg-neutral-100 dark:bg-neutral-800 rounded-xl p-4">
+          <div className="text-sm font-medium mb-3">Upload whiteboard photo</div>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <label className="text-xs text-neutral-500">Date taken</label>
+              <input type="date" value={capturedAt} onChange={e => setCapturedAt(e.target.value)}
+                className="px-2 py-1 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700" />
+            </div>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)}
+              placeholder="Notes (optional)"
+              rows={2}
+              className="px-3 py-2 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 resize-none" />
+            <label className={`flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed rounded-xl cursor-pointer transition
+              ${uploading ? 'opacity-50 pointer-events-none' : 'hover:bg-neutral-200 dark:hover:bg-neutral-700 border-neutral-300 dark:border-neutral-600'}`}>
+              <span className="text-sm">{uploading ? statusMsg : '📷 Choose photo or drag & drop'}</span>
+              <input type="file" accept="image/*" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); e.target.value = '' }} />
+            </label>
+          </div>
+        </div>
+      )}
+
+      {loading && <div className="text-sm text-neutral-400 py-6 text-center">Loading...</div>}
+
+      <div className="flex flex-col gap-4">
+        {snapshots.map(snap => {
+          const isExpanded = expandedId === snap.id
+          const isEditing = editingId === snap.id
+          return (
+            <div key={snap.id} className="bg-neutral-100 dark:bg-neutral-800 rounded-xl overflow-hidden">
+              <img src={snap.image_url} alt={`Whiteboard ${snap.captured_at}`}
+                className="w-full max-h-72 object-contain bg-neutral-200 dark:bg-neutral-700 cursor-pointer"
+                onClick={() => setExpandedId(isExpanded ? null : snap.id)} />
+              <div className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium">{fmt(snap.captured_at)}</span>
+                  <div className="flex gap-3">
+                    <button onClick={() => setExpandedId(isExpanded ? null : snap.id)}
+                      className="text-xs text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">
+                      {isExpanded ? '▲ Less' : '▼ More'}
+                    </button>
+                    {isEditor && (
+                      <>
+                        <button onClick={() => { setEditingId(snap.id); setEditNotes(snap.notes ?? '') }}
+                          className="text-xs text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">Edit</button>
+                        <button onClick={() => deleteSnapshot(snap.id, snap.image_url)}
+                          className="text-xs text-red-400 hover:text-red-600">Delete</button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {snap.notes && !isEditing && (
+                  <p className="text-sm text-neutral-600 dark:text-neutral-300 mb-2">{snap.notes}</p>
+                )}
+
+                {isEditing && (
+                  <div className="flex flex-col gap-2 mb-2">
+                    <textarea value={editNotes} onChange={e => setEditNotes(e.target.value)}
+                      rows={2} placeholder="Notes"
+                      className="px-2 py-1.5 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 resize-none" />
+                    <div className="flex gap-2">
+                      <button onClick={async () => { await updateSnapshot(snap.id, { notes: editNotes.trim() || undefined }); setEditingId(null) }}
+                        className="px-3 py-1 bg-neutral-900 dark:bg-white text-white dark:text-black rounded-lg text-xs font-medium">Save</button>
+                      <button onClick={() => setEditingId(null)}
+                        className="px-3 py-1 border rounded-lg text-xs">Cancel</button>
+                    </div>
+                  </div>
+                )}
+
+                {isExpanded && snap.extracted_text && (
+                  <div className="mt-2 pt-2 border-t border-neutral-200 dark:border-neutral-700">
+                    <div className="text-[11px] text-neutral-400 uppercase tracking-wide mb-1.5">Extracted text</div>
+                    <pre className="text-xs text-neutral-600 dark:text-neutral-300 whitespace-pre-wrap font-sans leading-relaxed">
+                      {snap.extracted_text}
+                    </pre>
+                  </div>
+                )}
+
+                {isExpanded && !snap.extracted_text && (
+                  <div className="mt-2 pt-2 border-t border-neutral-200 dark:border-neutral-700 text-xs text-neutral-400 italic">
+                    No text was extracted from this photo.
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {!loading && snapshots.length === 0 && (
+        <div className="text-sm text-neutral-400 text-center py-10">No whiteboard photos yet. Upload one above.</div>
+      )}
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const { user, loading, signIn, signOut, isEditor } = useAuth()
   const [tab, setTab] = useState('Production')
@@ -928,6 +1082,7 @@ export default function Dashboard() {
       case 'Brainstorm': return <BrainstormTab isEditor={isEditor} />
       case 'Performance': return <PerformanceTab />
       case 'Trends': return <TrendsTab isEditor={isEditor} />
+      case 'Whiteboard': return <WhiteboardTab isEditor={isEditor} />
       default: return null
     }
   }
