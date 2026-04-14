@@ -28,6 +28,11 @@ export async function GET() {
     return res.json()
   }
 
+  // Strip lone Unicode surrogates that PostgreSQL can't handle
+  function sanitize(str: string): string {
+    return str.replace(/[\uD800-\uDFFF]/g, '').trim()
+  }
+
   try {
     const now = new Date().toISOString()
 
@@ -54,7 +59,7 @@ export async function GET() {
 
       return {
         platform: 'Instagram',
-        title: post.caption ? post.caption.slice(0, 100) : `${post.media_type} · ${post.id}`,
+        title: post.caption ? sanitize(post.caption).slice(0, 100) : `${post.media_type} · ${post.id}`,
         views: likes, // Instagram Basic Display API doesn't expose impressions; use likes as proxy
         engagement_rate: engagement,
         watch_time_seconds: 0,
