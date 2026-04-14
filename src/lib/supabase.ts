@@ -5,6 +5,8 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
+export type DriveLink = { label: string; url: string }
+
 export type Video = {
   id: string
   title: string
@@ -15,6 +17,7 @@ export type Video = {
   created_at: string
   updated_at: string
   drive_link: string | null
+  drive_links: DriveLink[]
 }
 
 export type Idea = {

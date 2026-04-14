@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase, Video, Idea, CalendarEvent, NicheTrend, WhiteboardSnapshot, AppNotification } from './supabase'
+import { supabase, Video, Idea, CalendarEvent, NicheTrend, WhiteboardSnapshot, AppNotification, DriveLink } from './supabase'
 
 const STAGE_LABELS: Record<string, string> = {
   ideation: 'Ideation', recorded: 'Recorded', edit1: '1st Edit',
@@ -92,7 +92,17 @@ export function useVideos() {
     await supabase.from('videos').delete().eq('id', id)
   }
 
-  return { videos, loading, updateStage, addVideo, deleteVideo }
+  const updateDriveLinks = async (id: string, links: DriveLink[]) => {
+    await supabase.from('videos').update({ drive_links: links }).eq('id', id)
+    setVideos(prev => prev.map(v => v.id === id ? { ...v, drive_links: links } : v))
+  }
+
+  const updateNotes = async (id: string, notes: string) => {
+    await supabase.from('videos').update({ notes }).eq('id', id)
+    setVideos(prev => prev.map(v => v.id === id ? { ...v, notes } : v))
+  }
+
+  return { videos, loading, updateStage, addVideo, deleteVideo, updateDriveLinks, updateNotes }
 }
 
 export function useIdeas() {
