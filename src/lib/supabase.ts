@@ -68,6 +68,14 @@ export type NicheTrend = {
   added_at: string
 }
 
+export type AppNotification = {
+  id: string
+  type: string
+  message: string
+  read: boolean
+  created_at: string
+}
+
 export type WhiteboardSnapshot = {
   id: string
   image_url: string

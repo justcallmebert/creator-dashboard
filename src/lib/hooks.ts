@@ -1,15 +1,19 @@
 import { useState, useEffect } from 'react'
-import { supabase, Video, Idea, CalendarEvent, NicheTrend, WhiteboardSnapshot } from './supabase'
+import { supabase, Video, Idea, CalendarEvent, NicheTrend, WhiteboardSnapshot, AppNotification } from './supabase'
 
-async function slackNotify(payload: Record<string, any>) {
+const STAGE_LABELS: Record<string, string> = {
+  ideation: 'Ideation', recorded: 'Recorded', edit1: '1st Edit',
+  edit2: '2nd Edit', edit3: 'Final Edit', captions: 'Captions', posted: 'Posted',
+}
+const STAGE_EMOJI: Record<string, string> = {
+  ideation: '💡', recorded: '🎬', edit1: '✂️', edit2: '✂️', edit3: '✅', captions: '💬', posted: '🚀',
+}
+
+async function pushNotification(type: string, message: string) {
   try {
-    await fetch('/api/notify-slack', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
+    await supabase.from('notifications').insert({ type, message })
   } catch (e) {
-    // notifications are best-effort, never block the UI
+    // best-effort
   }
 }
 
@@ -70,12 +74,18 @@ export function useVideos() {
   const updateStage = async (id: string, stage: string) => {
     await supabase.from('videos').update({ stage, updated_at: new Date().toISOString() }).eq('id', id)
     const video = videos.find(v => v.id === id)
-    if (video) slackNotify({ type: 'stage_change', title: video.title, stage, assignedTo: video.assigned_to })
+    if (video) {
+      const emoji = STAGE_EMOJI[stage] ?? '📋'
+      const label = STAGE_LABELS[stage] ?? stage
+      const suffix = video.assigned_to ? ` — ${video.assigned_to}` : ''
+      pushNotification('stage_change', `${emoji} "${video.title}" moved to ${label}${suffix}`)
+    }
   }
 
   const addVideo = async (title: string, dueDate: string, stage = 'ideation') => {
     await supabase.from('videos').insert({ title, due_date: dueDate, stage })
-    slackNotify({ type: 'video_added', title, dueDate })
+    const due = dueDate ? ` · due ${new Date(dueDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''
+    pushNotification('video_added', `✨ New video added: "${title}"${due}`)
   }
 
   const deleteVideo = async (id: string) => {
@@ -200,6 +210,34 @@ export function useTrends() {
   }
 
   return { trends, loading, addTrend, deleteTrend }
+}
+
+export function useNotifications() {
+  const [notifications, setNotifications] = useState<AppNotification[]>([])
+
+  useEffect(() => {
+    supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(50).then(({ data }) => {
+      if (data) setNotifications(data)
+    })
+
+    const channel = supabase
+      .channel('notifications-changes')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload) => {
+        setNotifications(prev => [payload.new as AppNotification, ...prev])
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [])
+
+  const markAllRead = async () => {
+    await supabase.from('notifications').update({ read: true }).eq('read', false)
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })))
+  }
+
+  const unreadCount = notifications.filter(n => !n.read).length
+
+  return { notifications, unreadCount, markAllRead }
 }
 
 export function useWhiteboardSnapshots() {
