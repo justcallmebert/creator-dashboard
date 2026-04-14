@@ -196,14 +196,154 @@ function PerformanceTab() {
   )
 }
 
+const DRIVE_LINK_LABELS = ['Raw Footage', 'Rough Cut', '1st Edit', '2nd Edit', 'Final Cut', 'Thumbnail', 'Script', 'Other']
+
+function getDriveEmbedUrl(url: string): string | null {
+  const m = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/)
+  return m ? `https://drive.google.com/file/d/${m[1]}/preview` : null
+}
+
+function VideoModal({ video, isEditor, onClose, onUpdateLinks, onUpdateNotes, onUpdateStage }: {
+  video: any; isEditor: boolean; onClose: () => void
+  onUpdateLinks: (id: string, links: any[]) => void
+  onUpdateNotes: (id: string, notes: string) => void
+  onUpdateStage: (id: string, stage: string) => void
+}) {
+  const links: any[] = video.drive_links ?? []
+  const [newLabel, setNewLabel] = useState(DRIVE_LINK_LABELS[0])
+  const [newUrl, setNewUrl] = useState('')
+  const [showAddLink, setShowAddLink] = useState(false)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [editingNotes, setEditingNotes] = useState(false)
+  const [notesVal, setNotesVal] = useState(video.notes ?? '')
+
+  const addLink = () => {
+    if (!newUrl.trim()) return
+    const updated = [...links, { label: newLabel, url: newUrl.trim() }]
+    onUpdateLinks(video.id, updated)
+    setNewUrl(''); setShowAddLink(false)
+  }
+
+  const removeLink = (i: number) => {
+    onUpdateLinks(video.id, links.filter((_: any, idx: number) => idx !== i))
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-neutral-900 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        {/* Preview player */}
+        {previewUrl ? (
+          <div className="relative bg-black aspect-video">
+            <iframe src={previewUrl} className="w-full h-full" allow="autoplay" allowFullScreen />
+            <button onClick={() => setPreviewUrl(null)}
+              className="absolute top-2 right-2 bg-black/60 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm hover:bg-black/80">✕</button>
+          </div>
+        ) : (
+          <div className="bg-neutral-100 dark:bg-neutral-800 aspect-video flex items-center justify-center">
+            {links.some((l: any) => getDriveEmbedUrl(l.url)) ? (
+              <button onClick={() => setPreviewUrl(getDriveEmbedUrl(links.find((l: any) => getDriveEmbedUrl(l.url))?.url ?? '') ?? null)}
+                className="flex flex-col items-center gap-2 text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 transition">
+                <span className="text-4xl">▶</span>
+                <span className="text-sm">Preview video</span>
+              </button>
+            ) : (
+              <div className="text-sm text-neutral-400">No previewable Drive file linked yet</div>
+            )}
+          </div>
+        )}
+
+        <div className="p-5">
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <h2 className="text-base font-semibold leading-snug">{video.title}</h2>
+            <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 flex-shrink-0 text-lg leading-none">✕</button>
+          </div>
+
+          {/* Drive links */}
+          <div className="mb-4">
+            <div className="text-[11px] text-neutral-400 uppercase tracking-wide mb-2">Drive Links</div>
+            {links.length === 0 && <p className="text-xs text-neutral-400 italic mb-2">No links added yet.</p>}
+            <div className="flex flex-col gap-1.5 mb-2">
+              {links.map((l: any, i: number) => {
+                const embed = getDriveEmbedUrl(l.url)
+                return (
+                  <div key={i} className="flex items-center gap-2 bg-neutral-50 dark:bg-neutral-800 rounded-lg px-3 py-2">
+                    <span className="text-[11px] font-medium text-neutral-500 w-24 flex-shrink-0">{l.label}</span>
+                    <a href={l.url} target="_blank" rel="noopener noreferrer"
+                      className="text-xs text-blue-500 hover:underline flex-1 truncate">Open in Drive</a>
+                    {embed && (
+                      <button onClick={() => setPreviewUrl(previewUrl === embed ? null : embed)}
+                        className="text-[11px] text-neutral-400 hover:text-blue-500 flex-shrink-0">
+                        {previewUrl === embed ? '■ Stop' : '▶ Play'}
+                      </button>
+                    )}
+                    {isEditor && (
+                      <button onClick={() => removeLink(i)} className="text-[11px] text-red-400 hover:text-red-600 flex-shrink-0">✕</button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+            {isEditor && (
+              showAddLink ? (
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <select value={newLabel} onChange={e => setNewLabel(e.target.value)}
+                      className="px-2 py-1.5 border rounded-lg text-xs dark:bg-neutral-800 dark:border-neutral-700 flex-shrink-0">
+                      {DRIVE_LINK_LABELS.map(l => <option key={l}>{l}</option>)}
+                    </select>
+                    <input value={newUrl} onChange={e => setNewUrl(e.target.value)}
+                      placeholder="Paste Drive link" onKeyDown={e => e.key === 'Enter' && addLink()}
+                      className="flex-1 px-2 py-1.5 border rounded-lg text-xs dark:bg-neutral-800 dark:border-neutral-700" />
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={addLink}
+                      className="px-3 py-1 bg-neutral-900 dark:bg-white text-white dark:text-black rounded-lg text-xs font-medium">Add</button>
+                    <button onClick={() => { setShowAddLink(false); setNewUrl('') }}
+                      className="px-3 py-1 border rounded-lg text-xs">Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => setShowAddLink(true)}
+                  className="text-xs text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">+ Add link</button>
+              )
+            )}
+          </div>
+
+          {/* Notes */}
+          <div>
+            <div className="text-[11px] text-neutral-400 uppercase tracking-wide mb-1.5">Notes</div>
+            {editingNotes ? (
+              <div className="flex flex-col gap-2">
+                <textarea value={notesVal} onChange={e => setNotesVal(e.target.value)} rows={3}
+                  className="px-2 py-1.5 border rounded-lg text-sm dark:bg-neutral-800 dark:border-neutral-700 resize-none w-full" />
+                <div className="flex gap-2">
+                  <button onClick={() => { onUpdateNotes(video.id, notesVal); setEditingNotes(false) }}
+                    className="px-3 py-1 bg-neutral-900 dark:bg-white text-white dark:text-black rounded-lg text-xs font-medium">Save</button>
+                  <button onClick={() => setEditingNotes(false)} className="px-3 py-1 border rounded-lg text-xs">Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-start gap-2">
+                <p className="text-sm text-neutral-600 dark:text-neutral-300 flex-1">{video.notes || <span className="italic text-neutral-400">No notes</span>}</p>
+                {isEditor && <button onClick={() => setEditingNotes(true)} className="text-xs text-neutral-400 hover:text-neutral-700 flex-shrink-0">Edit</button>}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ProductionTab({ isEditor }: { isEditor: boolean }) {
-  const { videos, updateStage, addVideo } = useVideos()
+  const { videos, updateStage, addVideo, updateDriveLinks, updateNotes } = useVideos()
   const { events } = useEvents()
   const today = new Date().toISOString().split('T')[0]
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth())
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear())
   const [selectedDate, setSelectedDate] = useState<number | null>(null)
   const [editingVideo, setEditingVideo] = useState<string | null>(null)
+  const [selectedVideo, setSelectedVideo] = useState<any | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newDue, setNewDue] = useState('')
@@ -352,32 +492,20 @@ function ProductionTab({ isEditor }: { isEditor: boolean }) {
                 const stage = stageMap[v.stage]
                 const isOD = v.due_date !== null && v.due_date < today && v.stage !== 'posted'
                 return (
-                  <div key={v.id} className={`flex items-center gap-3 p-3 mb-1.5 bg-white dark:bg-neutral-900 rounded-lg ${isOD ? 'ring-1 ring-red-400' : 'border border-neutral-200 dark:border-neutral-700'}`}>
+                  <div key={v.id} onClick={() => setSelectedVideo(v)}
+                    className={`flex items-center gap-3 p-3 mb-1.5 bg-white dark:bg-neutral-900 rounded-lg cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800 transition ${isOD ? 'ring-1 ring-red-400' : 'border border-neutral-200 dark:border-neutral-700'}`}>
                     <div className="w-1 h-9 rounded-sm flex-shrink-0" style={{ background: isOD ? '#A32D2D' : stage?.color }} />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium truncate">{v.title}</div>
                       <div className={`text-xs ${isOD ? 'text-red-600 dark:text-red-400' : 'text-neutral-500'}`}>
-                        <div className={`text-xs ${isOD ? 'text-red-600 dark:text-red-400' : 'text-neutral-500'}`}>
-                        {isOD ? 'Overdue \u2014 ' : ''}{stage?.label}
-                        {v.assigned_to && ` \u00b7 ${v.assigned_to}`}
+                        {isOD ? 'Overdue — ' : ''}{stage?.label}
+                        {v.assigned_to && ` · ${v.assigned_to}`}
                       </div>
-                      {v.drive_link ? (
-                        <a href={v.drive_link} target="_blank" rel="noopener noreferrer"
-                          className="text-xs text-blue-500 hover:underline mt-0.5 inline-block" onClick={e => e.stopPropagation()}>
-                          Open in Drive
-                        </a>
-                      ) : isEditor ? (
-                        <button className="text-xs text-neutral-400 hover:text-blue-500 mt-0.5"
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            const link = prompt('Paste Google Drive folder link:');
-                            if (link) { await supabase.from('videos').update({ drive_link: link }).eq('id', v.id); window.location.reload(); }
-                          }}>
-                          + Add Drive link
-                        </button>
-                      ) : null}
-                        {v.assigned_to && ` \u00b7 ${v.assigned_to}`}
-                      </div>
+                      {(v.drive_links?.length > 0 || v.drive_link) && (
+                        <div className="text-[11px] text-blue-500 mt-0.5">
+                          {v.drive_links?.length > 0 ? `${v.drive_links.length} link${v.drive_links.length > 1 ? 's' : ''}` : 'Drive link'}
+                        </div>
+                      )}
                     </div>
                     {isEditor && editingVideo === v.id ? (
                       <div className="flex flex-wrap gap-1">
@@ -424,6 +552,16 @@ function ProductionTab({ isEditor }: { isEditor: boolean }) {
             <div className="text-sm text-neutral-400">Nothing scheduled</div>
           )}
         </div>
+      )}
+      {selectedVideo && (
+        <VideoModal
+          video={videos.find(v => v.id === selectedVideo.id) ?? selectedVideo}
+          isEditor={isEditor}
+          onClose={() => setSelectedVideo(null)}
+          onUpdateLinks={(id, links) => { updateDriveLinks(id, links) }}
+          onUpdateNotes={(id, notes) => { updateNotes(id, notes) }}
+          onUpdateStage={(id, stage) => { updateStage(id, stage) }}
+        />
       )}
     </div>
   )
