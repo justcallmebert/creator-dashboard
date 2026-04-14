@@ -146,7 +146,7 @@ function AnalyticsTab() {
     ]
     return [
       { label: 'Followers', val: fmt(snapshots['followers']?.metric_value) },
-      { label: 'Total likes', val: fmt(snapshots['total_likes']?.metric_value) },
+      { label: 'Total impressions', val: fmt(snapshots['total_impressions']?.metric_value) },
       { label: 'Video count', val: fmt(snapshots['video_count']?.metric_value) },
       { label: 'Avg engagement', val: snapshots['avg_engagement'] ? snapshots['avg_engagement'].metric_value.toFixed(1) + '%' : '—' },
     ]
@@ -186,8 +186,8 @@ function AnalyticsTab() {
                 className="px-2 py-1.5 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-full" />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs text-neutral-500">Total likes</label>
-              <input value={ttLikes} onChange={e => setTtLikes(e.target.value)} placeholder="e.g. 2500000"
+              <label className="text-xs text-neutral-500">Total impressions</label>
+              <input value={ttLikes} onChange={e => setTtLikes(e.target.value)} placeholder="e.g. 21600"
                 className="px-2 py-1.5 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-full" />
             </div>
             <div className="flex flex-col gap-1">
