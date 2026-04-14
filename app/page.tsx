@@ -750,7 +750,7 @@ const PERIODS: { id: Period; label: string }[] = [
 ]
 
 function TrendsTab({ isEditor }: { isEditor: boolean }) {
-  const { trends, loading, addTrend, deleteTrend } = useTrends()
+  const { trends, loading, addTrend, deleteTrend, refetch } = useTrends()
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(BLANK_TREND)
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -765,6 +765,7 @@ function TrendsTab({ isEditor }: { isEditor: boolean }) {
       const res = await fetch(`/api/sync-trends?period=${p}`)
       const json = await res.json()
       if (!res.ok) setSyncError(json.error ?? 'Sync failed')
+      else await refetch()
     } catch (e: any) {
       setSyncError(e.message)
     }

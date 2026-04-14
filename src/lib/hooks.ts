@@ -201,6 +201,11 @@ export function useTrends() {
     return () => { supabase.removeChannel(channel) }
   }, [])
 
+  const refetch = async () => {
+    const { data } = await supabase.from('niche_trends').select('*').order('added_at', { ascending: false })
+    if (data) setTrends(data)
+  }
+
   const addTrend = async (trend: Omit<NicheTrend, 'id' | 'added_at'>) => {
     await supabase.from('niche_trends').insert(trend)
   }
@@ -209,7 +214,7 @@ export function useTrends() {
     await supabase.from('niche_trends').delete().eq('id', id)
   }
 
-  return { trends, loading, addTrend, deleteTrend }
+  return { trends, loading, addTrend, deleteTrend, refetch }
 }
 
 export function useNotifications() {
