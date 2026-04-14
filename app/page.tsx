@@ -306,68 +306,105 @@ function AnalyticsTab() {
   )
 }
 
+const PERF_PLATFORMS = ['All', 'YouTube', 'Instagram', 'TikTok']
+const PERF_TYPES = ['All', 'Short', 'Long-form']
+const PERF_SORT = ['Views', 'Engagement', 'Newest', 'Oldest']
+
+const PLATFORM_DOT: Record<string, string> = {
+  YouTube: 'bg-red-500',
+  Instagram: 'bg-pink-500',
+  TikTok: 'bg-neutral-800 dark:bg-white',
+}
+
 function PerformanceTab() {
-  const [top5, setTop5] = useState<any[]>([])
-  const [bottom5, setBottom5] = useState<any[]>([])
+  const [videos, setVideos] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [platform, setPlatform] = useState('All')
+  const [type, setType] = useState('All')
+  const [sort, setSort] = useState('Views')
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
     const load = async () => {
-      const { data } = await supabase.from('video_performance')
-        .select('*').eq('platform', 'YouTube').order('views', { ascending: false })
-
-      if (data && data.length > 0) {
-        setTop5(data.slice(0, 5))
-        setBottom5(data.slice(-5).reverse())
-      }
+      const { data } = await supabase.from('video_performance').select('*')
+      setVideos(data ?? [])
       setLoading(false)
     }
     load()
   }, [])
 
-  if (loading) return <div className="text-sm text-neutral-400">Loading performance data...</div>
-  if (top5.length === 0) return (
-    <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-4 text-sm text-neutral-500">
-      No performance data yet. Go to Analytics and click "Sync now" to pull your YouTube data.
-    </div>
-  )
-
   const fmt = (n: number) => {
     if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M'
     if (n >= 1000) return (n / 1000).toFixed(1) + 'K'
-    return n.toLocaleString()
+    return n?.toLocaleString() ?? '0'
   }
+
+  const filtered = videos
+    .filter(v => platform === 'All' || v.platform === platform)
+    .filter(v => type === 'All' || (type === 'Short' ? v.is_short : !v.is_short))
+    .filter(v => !search || (v.title ?? '').toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => {
+      if (sort === 'Views') return b.views - a.views
+      if (sort === 'Engagement') return b.engagement_rate - a.engagement_rate
+      if (sort === 'Newest') return new Date(b.published_at ?? b.recorded_at).getTime() - new Date(a.published_at ?? a.recorded_at).getTime()
+      return new Date(a.published_at ?? a.recorded_at).getTime() - new Date(b.published_at ?? b.recorded_at).getTime()
+    })
+
+  if (loading) return <div className="text-sm text-neutral-400">Loading...</div>
+  if (videos.length === 0) return (
+    <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-4 text-sm text-neutral-500">
+      No data yet — go to Analytics and sync each platform first.
+    </div>
+  )
 
   return (
     <div>
-      <div className="mb-6">
-        <div className="text-sm font-medium mb-3">Top 5 performing</div>
-        {top5.map((v, i) => (
-          <div key={v.id} className="flex items-center gap-3 p-3 mb-1.5 bg-neutral-100 dark:bg-neutral-800 rounded-lg">
-            <span className="text-base font-medium text-green-600 dark:text-green-400 min-w-[28px]">#{i + 1}</span>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium truncate">{v.title || 'YouTube video'}</div>
-              <div className="text-xs text-neutral-500">{v.platform}</div>
-            </div>
-            <div className="text-right">
-              <div className="text-sm font-medium">{fmt(v.views)}</div>
-              <div className="text-xs text-green-600 dark:text-green-400">{v.engagement_rate}% eng.</div>
-            </div>
+      {/* Search + filters */}
+      <div className="flex flex-col gap-2 mb-4">
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search videos..."
+          className="w-full px-3 py-2 border rounded-lg text-sm dark:bg-neutral-800 dark:border-neutral-700" />
+        <div className="flex gap-2 flex-wrap">
+          {PERF_PLATFORMS.map(p => (
+            <button key={p} onClick={() => setPlatform(p)}
+              className={`px-2.5 py-1 rounded-lg text-xs transition ${platform === p ? 'bg-neutral-900 dark:bg-white text-white dark:text-black font-medium' : 'border border-neutral-200 dark:border-neutral-700 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}>
+              {p}
+            </button>
+          ))}
+          <div className="w-px bg-neutral-200 dark:bg-neutral-700 mx-1" />
+          {PERF_TYPES.map(t => (
+            <button key={t} onClick={() => setType(t)}
+              className={`px-2.5 py-1 rounded-lg text-xs transition ${type === t ? 'bg-neutral-900 dark:bg-white text-white dark:text-black font-medium' : 'border border-neutral-200 dark:border-neutral-700 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}>
+              {t}
+            </button>
+          ))}
+          <div className="ml-auto flex items-center gap-1.5">
+            <span className="text-xs text-neutral-400">Sort:</span>
+            <select value={sort} onChange={e => setSort(e.target.value)}
+              className="text-xs border rounded-lg px-2 py-1 dark:bg-neutral-800 dark:border-neutral-700">
+              {PERF_SORT.map(s => <option key={s}>{s}</option>)}
+            </select>
           </div>
-        ))}
+        </div>
+        <div className="text-xs text-neutral-400">{filtered.length} video{filtered.length !== 1 ? 's' : ''}</div>
       </div>
-      <div>
-        <div className="text-sm font-medium mb-3">Lowest 5 performing</div>
-        {bottom5.map((v, i) => (
-          <div key={v.id} className="flex items-center gap-3 p-3 mb-1.5 bg-neutral-100 dark:bg-neutral-800 rounded-lg">
-            <span className="text-sm text-red-600 dark:text-red-400 min-w-[28px]">#{top5.length + bottom5.length - i}</span>
+
+      {/* Video list */}
+      <div className="flex flex-col gap-1.5">
+        {filtered.map((v, i) => (
+          <div key={v.id} className="flex items-center gap-3 p-3 bg-neutral-100 dark:bg-neutral-800 rounded-lg">
+            <span className="text-xs text-neutral-400 min-w-[28px] text-right">{i + 1}</span>
+            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${PLATFORM_DOT[v.platform] ?? 'bg-neutral-400'}`} />
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium truncate">{v.title || 'YouTube video'}</div>
-              <div className="text-xs text-neutral-500">{v.platform}</div>
+              <div className="text-sm font-medium truncate">{v.title || `${v.platform} video`}</div>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-[11px] text-neutral-400">{v.platform}</span>
+                {v.is_short && <span className="text-[11px] bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 px-1.5 rounded">Short</span>}
+                {v.published_at && <span className="text-[11px] text-neutral-400">{new Date(v.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}</span>}
+              </div>
             </div>
-            <div className="text-right">
+            <div className="text-right flex-shrink-0">
               <div className="text-sm font-medium">{fmt(v.views)}</div>
-              <div className="text-xs text-red-600 dark:text-red-400">{v.engagement_rate}% eng.</div>
+              <div className="text-xs text-neutral-500">{v.engagement_rate}% eng.</div>
             </div>
           </div>
         ))}
