@@ -1,6 +1,18 @@
 import { useState, useEffect } from 'react'
 import { supabase, Video, Idea, CalendarEvent, NicheTrend, WhiteboardSnapshot } from './supabase'
 
+async function slackNotify(payload: Record<string, any>) {
+  try {
+    await fetch('/api/notify-slack', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+  } catch (e) {
+    // notifications are best-effort, never block the UI
+  }
+}
+
 export function useAuth() {
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -57,10 +69,13 @@ export function useVideos() {
 
   const updateStage = async (id: string, stage: string) => {
     await supabase.from('videos').update({ stage, updated_at: new Date().toISOString() }).eq('id', id)
+    const video = videos.find(v => v.id === id)
+    if (video) slackNotify({ type: 'stage_change', title: video.title, stage, assignedTo: video.assigned_to })
   }
 
   const addVideo = async (title: string, dueDate: string, stage = 'ideation') => {
     await supabase.from('videos').insert({ title, due_date: dueDate, stage })
+    slackNotify({ type: 'video_added', title, dueDate })
   }
 
   const deleteVideo = async (id: string) => {
