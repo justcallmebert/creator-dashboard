@@ -23,44 +23,60 @@ export async function GET() {
   try {
     const now = new Date().toISOString()
 
-    const [channelData, searchData] = await Promise.all([
+    // Fetch up to 50 recent videos across two pages for better historical coverage
+    const [channelData, searchData1, searchData2] = await Promise.all([
       ytFetch('channels', { part: 'statistics,snippet', id: CHANNEL_ID }),
-      ytFetch('search', { part: 'id', channelId: CHANNEL_ID, order: 'date', type: 'video', maxResults: '20' }),
+      ytFetch('search', { part: 'id', channelId: CHANNEL_ID, order: 'date', type: 'video', maxResults: '50' }),
+      ytFetch('search', { part: 'id', channelId: CHANNEL_ID, order: 'date', type: 'video', maxResults: '50', pageToken: '' }),
     ])
 
     const channel = channelData.items?.[0]
     if (!channel) return NextResponse.json({ error: 'Channel not found' }, { status: 404 })
 
     const stats = channel.statistics
-    const videoIds = searchData.items?.map((item: any) => item.id.videoId).filter(Boolean) || []
+    const allIds = [
+      ...(searchData1.items?.map((item: any) => item.id.videoId).filter(Boolean) || []),
+      ...(searchData2.items?.map((item: any) => item.id.videoId).filter(Boolean) || []),
+    ]
+    const videoIds = [...new Set(allIds)].slice(0, 50)
 
     let videoPerformance: any[] = []
     if (videoIds.length > 0) {
-      const videoData = await ytFetch('videos', {
-        part: 'statistics,snippet,contentDetails',
-        id: videoIds.join(','),
-      })
+      // Fetch in batches of 50 (API limit)
+      const batches = []
+      for (let i = 0; i < videoIds.length; i += 50) {
+        batches.push(videoIds.slice(i, i + 50))
+      }
+      const batchResults = await Promise.all(batches.map(batch =>
+        ytFetch('videos', { part: 'statistics,snippet,contentDetails', id: batch.join(',') })
+      ))
 
-      videoPerformance = videoData.items?.map((video: any) => {
-        const s = video.statistics
-        const views = Number(s.viewCount || 0)
-        const likes = Number(s.likeCount || 0)
-        const comments = Number(s.commentCount || 0)
-        const engagement = views > 0 ? Math.round(((likes + comments) / views) * 10000) / 100 : 0
-        const dur = video.contentDetails?.duration || 'PT0S'
-        const match = dur.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/)
-        const seconds = (Number(match?.[1] || 0) * 3600) + (Number(match?.[2] || 0) * 60) + Number(match?.[3] || 0)
+      videoPerformance = batchResults.flatMap(videoData =>
+        videoData.items?.map((video: any) => {
+          const s = video.statistics
+          const views = Number(s.viewCount || 0)
+          const likes = Number(s.likeCount || 0)
+          const comments = Number(s.commentCount || 0)
+          const engagement = views > 0 ? Math.round(((likes + comments) / views) * 10000) / 100 : 0
+          const dur = video.contentDetails?.duration || 'PT0S'
+          const match = dur.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/)
+          const seconds = (Number(match?.[1] || 0) * 3600) + (Number(match?.[2] || 0) * 60) + Number(match?.[3] || 0)
+          const isShort = seconds > 0 && seconds <= 60
+          const publishedAt = video.snippet.publishedAt ?? null
 
-        return {
-          platform: 'YouTube',
-          views,
-          engagement_rate: engagement,
-          watch_time_seconds: seconds,
-          ctr: 0,
-          recorded_at: now,
-          title: video.snippet.title,
-        }
-      }) || []
+          return {
+            platform: 'YouTube',
+            views,
+            engagement_rate: engagement,
+            watch_time_seconds: seconds,
+            ctr: 0,
+            recorded_at: now,
+            title: video.snippet.title,
+            published_at: publishedAt,
+            is_short: isShort,
+          }
+        }) || []
+      )
     }
 
     // Clear old data and write fresh

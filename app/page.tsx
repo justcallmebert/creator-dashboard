@@ -32,46 +32,36 @@ function LoginModal({ onLogin, onClose }: { onLogin: (e: string, p: string) => P
 
 function AnalyticsTab() {
   const [metrics, setMetrics] = useState<any>(null)
+  const [perfData, setPerfData] = useState<any[]>([])
   const [syncing, setSyncing] = useState(false)
   const [lastSync, setLastSync] = useState<string | null>(null)
 
   useEffect(() => { loadMetrics() }, [])
 
   const loadMetrics = async () => {
-    const { data: subs } = await supabase.from('analytics_snapshots')
-      .select('*').eq('platform', 'YouTube').eq('metric_name', 'subscribers')
-      .order('recorded_at', { ascending: false }).limit(1)
-    const { data: views } = await supabase.from('analytics_snapshots')
-      .select('*').eq('platform', 'YouTube').eq('metric_name', 'total_views')
-      .order('recorded_at', { ascending: false }).limit(1)
-    const { data: vidCount } = await supabase.from('analytics_snapshots')
-      .select('*').eq('platform', 'YouTube').eq('metric_name', 'total_videos')
-      .order('recorded_at', { ascending: false }).limit(1)
-    const { data: perfData } = await supabase.from('video_performance')
-      .select('*').eq('platform', 'YouTube').order('recorded_at', { ascending: false }).limit(50)
-
-    const totalEngagement = perfData && perfData.length > 0
-      ? perfData.reduce((sum: number, v: any) => sum + Number(v.engagement_rate || 0), 0) / perfData.length
-      : 0
-
+    const [{ data: subs }, { data: views }, { data: vidCount }, { data: perf }] = await Promise.all([
+      supabase.from('analytics_snapshots').select('*').eq('platform', 'YouTube').eq('metric_name', 'subscribers').order('recorded_at', { ascending: false }).limit(1),
+      supabase.from('analytics_snapshots').select('*').eq('platform', 'YouTube').eq('metric_name', 'total_views').order('recorded_at', { ascending: false }).limit(1),
+      supabase.from('analytics_snapshots').select('*').eq('platform', 'YouTube').eq('metric_name', 'total_videos').order('recorded_at', { ascending: false }).limit(1),
+      supabase.from('video_performance').select('*').eq('platform', 'YouTube').order('published_at', { ascending: false }),
+    ])
+    const pd = perf ?? []
+    setPerfData(pd)
+    const totalEngagement = pd.length > 0 ? pd.reduce((s: number, v: any) => s + Number(v.engagement_rate || 0), 0) / pd.length : 0
     setMetrics({
       subscribers: subs?.[0]?.metric_value ?? '—',
       totalViews: views?.[0]?.metric_value ?? '—',
       totalVideos: vidCount?.[0]?.metric_value ?? '—',
       avgEngagement: totalEngagement > 0 ? totalEngagement.toFixed(2) + '%' : '—',
-      recentVideos: perfData?.length ?? 0,
-      lastRecorded: subs?.[0]?.recorded_at ?? null,
     })
-    if (subs?.[0]?.recorded_at) {
-      setLastSync(new Date(subs[0].recorded_at).toLocaleString())
-    }
+    if (subs?.[0]?.recorded_at) setLastSync(new Date(subs[0].recorded_at).toLocaleString())
   }
 
   const handleSync = async () => {
     setSyncing(true)
     try {
       const res = await fetch('/api/sync-youtube')
-      if (res.ok) { await loadMetrics() }
+      if (res.ok) await loadMetrics()
     } catch (e) { console.error(e) }
     setSyncing(false)
   }
@@ -84,8 +74,49 @@ function AnalyticsTab() {
     return num.toLocaleString()
   }
 
+  // ── Monthly breakdown ──────────────────────────────────────────────
+  const monthlyData = (() => {
+    const map: Record<string, { month: string; total: number; shorts: number; longform: number; views: number; engagement: number[] }> = {}
+    perfData.forEach(v => {
+      if (!v.published_at) return
+      const d = new Date(v.published_at)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      const label = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+      if (!map[key]) map[key] = { month: label, total: 0, shorts: 0, longform: 0, views: 0, engagement: [] }
+      map[key].total++
+      if (v.is_short) map[key].shorts++; else map[key].longform++
+      map[key].views += Number(v.views || 0)
+      if (v.engagement_rate) map[key].engagement.push(Number(v.engagement_rate))
+    })
+    return Object.entries(map).sort(([a], [b]) => b.localeCompare(a)).slice(0, 6).map(([, v]) => ({
+      ...v,
+      avgEngagement: v.engagement.length > 0 ? (v.engagement.reduce((a, b) => a + b, 0) / v.engagement.length).toFixed(1) : '—',
+    }))
+  })()
+
+  // ── Shorts posting time breakdown ──────────────────────────────────
+  const shorts = perfData.filter(v => v.is_short && v.published_at)
+  const hourBuckets: Record<string, { label: string; count: number; views: number }> = {
+    '0-6': { label: 'Midnight–6am', count: 0, views: 0 },
+    '6-10': { label: '6am–10am', count: 0, views: 0 },
+    '10-14': { label: '10am–2pm', count: 0, views: 0 },
+    '14-18': { label: '2pm–6pm', count: 0, views: 0 },
+    '18-24': { label: '6pm–Midnight', count: 0, views: 0 },
+  }
+  shorts.forEach(v => {
+    const h = new Date(v.published_at).getHours()
+    const bucket = h < 6 ? '0-6' : h < 10 ? '6-10' : h < 14 ? '10-14' : h < 18 ? '14-18' : '18-24'
+    hourBuckets[bucket].count++
+    hourBuckets[bucket].views += Number(v.views || 0)
+  })
+  const timingRows = Object.values(hourBuckets).filter(b => b.count > 0)
+    .sort((a, b) => (b.views / Math.max(b.count, 1)) - (a.views / Math.max(a.count, 1)))
+
+  const maxBarViews = Math.max(...Object.values(hourBuckets).map(b => b.count > 0 ? b.views / b.count : 0), 1)
+
   return (
     <div>
+      {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex gap-2 flex-wrap">
           <span className="px-3 py-1.5 rounded-lg text-sm font-medium bg-neutral-900 dark:bg-white text-white dark:text-black">YouTube</span>
@@ -98,30 +129,114 @@ function AnalyticsTab() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-        <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-3">
-          <div className="text-xs text-neutral-500 mb-1">Subscribers</div>
-          <div className="text-xl font-medium">{fmt(metrics?.subscribers)}</div>
-        </div>
-        <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-3">
-          <div className="text-xs text-neutral-500 mb-1">Total views</div>
-          <div className="text-xl font-medium">{fmt(metrics?.totalViews)}</div>
-        </div>
-        <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-3">
-          <div className="text-xs text-neutral-500 mb-1">Total videos</div>
-          <div className="text-xl font-medium">{fmt(metrics?.totalVideos)}</div>
-        </div>
-        <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-3">
-          <div className="text-xs text-neutral-500 mb-1">Avg engagement</div>
-          <div className="text-xl font-medium">{metrics?.avgEngagement ?? '—'}</div>
-        </div>
+      {/* Top stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-2">
+        {[
+          { label: 'Subscribers', val: fmt(metrics?.subscribers) },
+          { label: 'Total views', val: fmt(metrics?.totalViews) },
+          { label: 'Total videos', val: fmt(metrics?.totalVideos) },
+          { label: 'Avg engagement', val: metrics?.avgEngagement ?? '—' },
+        ].map(({ label, val }) => (
+          <div key={label} className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-3">
+            <div className="text-xs text-neutral-500 mb-1">{label}</div>
+            <div className="text-xl font-medium">{val}</div>
+          </div>
+        ))}
       </div>
+      {lastSync && <div className="text-xs text-neutral-400 mb-5">Last synced: {lastSync}</div>}
 
-      {lastSync && <div className="text-xs text-neutral-400 mb-4">Last synced: {lastSync}</div>}
+      {perfData.length > 0 && (
+        <>
+          {/* Month-to-month comparison */}
+          <div className="mb-6">
+            <div className="text-sm font-medium mb-3">Month-to-month</div>
+            {monthlyData.length === 0 ? (
+              <p className="text-xs text-neutral-400">No publish date data yet — sync to populate.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-[11px] text-neutral-400 uppercase tracking-wide border-b border-neutral-200 dark:border-neutral-700">
+                      <th className="text-left pb-2 font-medium">Month</th>
+                      <th className="text-right pb-2 font-medium">Videos</th>
+                      <th className="text-right pb-2 font-medium">Shorts</th>
+                      <th className="text-right pb-2 font-medium">Long-form</th>
+                      <th className="text-right pb-2 font-medium">Views</th>
+                      <th className="text-right pb-2 font-medium">Avg Eng.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {monthlyData.map((row, i) => (
+                      <tr key={row.month} className={`border-b border-neutral-100 dark:border-neutral-800 ${i === 0 ? 'font-medium' : ''}`}>
+                        <td className="py-2 text-neutral-700 dark:text-neutral-300">{row.month}</td>
+                        <td className="py-2 text-right">{row.total}</td>
+                        <td className="py-2 text-right text-orange-500">{row.shorts || '—'}</td>
+                        <td className="py-2 text-right text-red-500">{row.longform || '—'}</td>
+                        <td className="py-2 text-right">{fmt(row.views)}</td>
+                        <td className="py-2 text-right text-neutral-500">{row.avgEngagement}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
 
-      <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-4 text-sm text-neutral-500">
-        TikTok and Instagram APIs coming soon. YouTube is live — click "Sync now" to pull the latest data.
-      </div>
+          {/* Shorts frequency + timing */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+            {/* Shorts frequency */}
+            <div className="bg-neutral-100 dark:bg-neutral-800 rounded-xl p-4">
+              <div className="text-sm font-medium mb-1">Shorts frequency</div>
+              <div className="text-xs text-neutral-500 mb-3">From last {perfData.length} videos tracked</div>
+              {monthlyData.length === 0 ? (
+                <p className="text-xs text-neutral-400">Sync to see data.</p>
+              ) : (
+                <>
+                  {monthlyData.map(row => (
+                    <div key={row.month} className="flex items-center gap-2 mb-2">
+                      <span className="text-xs text-neutral-500 w-12 flex-shrink-0">{row.month}</span>
+                      <div className="flex-1 bg-neutral-200 dark:bg-neutral-700 rounded-full h-2">
+                        <div className="bg-orange-400 h-2 rounded-full transition-all"
+                          style={{ width: `${Math.min(100, (row.shorts / Math.max(...monthlyData.map(r => r.shorts), 1)) * 100)}%` }} />
+                      </div>
+                      <span className="text-xs font-medium w-4 text-right">{row.shorts}</span>
+                    </div>
+                  ))}
+                  <div className="text-[11px] text-neutral-400 mt-2">
+                    Avg {(monthlyData.reduce((s, r) => s + r.shorts, 0) / Math.max(monthlyData.length, 1)).toFixed(1)} shorts/month
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Post timing */}
+            <div className="bg-neutral-100 dark:bg-neutral-800 rounded-xl p-4">
+              <div className="text-sm font-medium mb-1">Best time to post shorts</div>
+              <div className="text-xs text-neutral-500 mb-3">Avg views per post by time of day</div>
+              {timingRows.length === 0 ? (
+                <p className="text-xs text-neutral-400">No Shorts with publish times yet — sync to populate.</p>
+              ) : (
+                timingRows.map(row => (
+                  <div key={row.label} className="flex items-center gap-2 mb-2">
+                    <span className="text-xs text-neutral-500 w-28 flex-shrink-0">{row.label}</span>
+                    <div className="flex-1 bg-neutral-200 dark:bg-neutral-700 rounded-full h-2">
+                      <div className="bg-blue-400 h-2 rounded-full transition-all"
+                        style={{ width: `${Math.min(100, ((row.views / row.count) / maxBarViews) * 100)}%` }} />
+                    </div>
+                    <span className="text-xs text-neutral-500 w-16 text-right">{fmt(Math.round(row.views / row.count))}/post</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {perfData.length === 0 && (
+        <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-4 text-sm text-neutral-500">
+          Click "Sync now" to pull your YouTube data and populate the charts.
+        </div>
+      )}
     </div>
   )
 }
