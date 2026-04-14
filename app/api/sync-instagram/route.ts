@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const BASE = 'https://graph.instagram.com'
+const BASE = 'https://graph.facebook.com/v19.0'
 
 export async function GET() {
   const ACCESS_TOKEN = process.env.INSTAGRAM_ACCESS_TOKEN
@@ -31,14 +31,14 @@ export async function GET() {
   try {
     const now = new Date().toISOString()
 
-    // Profile stats
+    // Profile stats (Instagram Graph API via Facebook Login)
     const profile = await igFetch(`/${IG_USER_ID}`, {
-      fields: 'followers_count,media_count,username',
+      fields: 'followers_count,media_count,username,name',
     })
 
     // Recent media
     const mediaRes = await igFetch(`/${IG_USER_ID}/media`, {
-      fields: 'id,timestamp,media_type,like_count,comments_count,caption,permalink,thumbnail_url,media_url',
+      fields: 'id,timestamp,media_type,like_count,comments_count,caption,permalink',
       limit: '50',
     })
     const media: any[] = mediaRes.data ?? []
