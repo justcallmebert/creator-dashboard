@@ -1,25 +1,25 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
-
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY!
 const CHANNEL_ID = 'UC2rE8iHcrmv5x6QE1X33KyQ'
 const BASE = 'https://www.googleapis.com/youtube/v3'
 
-async function ytFetch(endpoint: string, params: Record<string, string>) {
-  const url = new URL(`${BASE}/${endpoint}`)
-  url.searchParams.set('key', YOUTUBE_API_KEY)
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
-  const res = await fetch(url.toString())
-  if (!res.ok) throw new Error(`YouTube API error: ${res.status}`)
-  return res.json()
-}
-
 export async function GET() {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+  const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY!
+
+  async function ytFetch(endpoint: string, params: Record<string, string>) {
+    const url = new URL(`${BASE}/${endpoint}`)
+    url.searchParams.set('key', YOUTUBE_API_KEY)
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
+    const res = await fetch(url.toString())
+    if (!res.ok) throw new Error(`YouTube API error: ${res.status}`)
+    return res.json()
+  }
+
   try {
     const now = new Date().toISOString()
 

@@ -31,52 +31,61 @@ function LoginModal({ onLogin, onClose }: { onLogin: (e: string, p: string) => P
 }
 
 function AnalyticsTab() {
-  const [metrics, setMetrics] = useState<any>(null)
+  const [platform, setPlatform] = useState<'YouTube' | 'Instagram' | 'TikTok'>('YouTube')
+  const [snapshots, setSnapshots] = useState<Record<string, any>>({})
   const [perfData, setPerfData] = useState<any[]>([])
   const [syncing, setSyncing] = useState(false)
   const [lastSync, setLastSync] = useState<string | null>(null)
-
-  useEffect(() => { loadMetrics() }, [])
-
-  const loadMetrics = async () => {
-    const [{ data: subs }, { data: views }, { data: vidCount }, { data: perf }] = await Promise.all([
-      supabase.from('analytics_snapshots').select('*').eq('platform', 'YouTube').eq('metric_name', 'subscribers').order('recorded_at', { ascending: false }).limit(1),
-      supabase.from('analytics_snapshots').select('*').eq('platform', 'YouTube').eq('metric_name', 'total_views').order('recorded_at', { ascending: false }).limit(1),
-      supabase.from('analytics_snapshots').select('*').eq('platform', 'YouTube').eq('metric_name', 'total_videos').order('recorded_at', { ascending: false }).limit(1),
-      supabase.from('video_performance').select('*').eq('platform', 'YouTube').order('published_at', { ascending: false }),
-    ])
-    const pd = perf ?? []
-    setPerfData(pd)
-    const totalEngagement = pd.length > 0 ? pd.reduce((s: number, v: any) => s + Number(v.engagement_rate || 0), 0) / pd.length : 0
-    setMetrics({
-      subscribers: subs?.[0]?.metric_value ?? '—',
-      totalViews: views?.[0]?.metric_value ?? '—',
-      totalVideos: vidCount?.[0]?.metric_value ?? '—',
-      avgEngagement: totalEngagement > 0 ? totalEngagement.toFixed(2) + '%' : '—',
-    })
-    if (subs?.[0]?.recorded_at) setLastSync(new Date(subs[0].recorded_at).toLocaleString())
-  }
-
-  const handleSync = async () => {
-    setSyncing(true)
-    try {
-      const res = await fetch('/api/sync-youtube')
-      if (res.ok) await loadMetrics()
-    } catch (e) { console.error(e) }
-    setSyncing(false)
-  }
+  // TikTok manual entry
+  const [ttFollowers, setTtFollowers] = useState('')
+  const [ttLikes, setTtLikes] = useState('')
+  const [ttSaving, setTtSaving] = useState(false)
 
   const fmt = (n: any) => {
     if (n === '—' || n === null || n === undefined) return '—'
     const num = Number(n)
+    if (isNaN(num)) return '—'
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
     if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
     return num.toLocaleString()
   }
 
-  // ── Monthly breakdown ──────────────────────────────────────────────
+  const loadData = async (p: string) => {
+    const { data: snaps } = await supabase.from('analytics_snapshots').select('*').eq('platform', p).order('recorded_at', { ascending: false })
+    const { data: perf } = await supabase.from('video_performance').select('*').eq('platform', p).order('published_at', { ascending: false })
+    const snap: Record<string, any> = {}
+    snaps?.forEach((s: any) => { if (!snap[s.metric_name]) snap[s.metric_name] = s })
+    setSnapshots(snap)
+    setPerfData(perf ?? [])
+    const latest = snaps?.[0]?.recorded_at
+    setLastSync(latest ? new Date(latest).toLocaleString() : null)
+  }
+
+  useEffect(() => { loadData(platform) }, [platform])
+
+  const handleSync = async () => {
+    setSyncing(true)
+    try {
+      const endpoint = platform === 'YouTube' ? '/api/sync-youtube' : platform === 'Instagram' ? '/api/sync-instagram' : null
+      if (endpoint) {
+        const res = await fetch(endpoint)
+        if (res.ok) await loadData(platform)
+        else { const j = await res.json(); alert('Sync error: ' + (j.error ?? 'Unknown')) }
+      }
+    } catch (e: any) { alert('Sync error: ' + e.message) }
+    setSyncing(false)
+  }
+
+  const saveTikTok = async () => {
+    setTtSaving(true)
+    await fetch('/api/sync-tiktok', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ followers: Number(ttFollowers), totalLikes: Number(ttLikes), videos: [] }) })
+    await loadData('TikTok')
+    setTtSaving(false)
+  }
+
+  // ── Monthly breakdown (YouTube + Instagram) ────────────────────────
   const monthlyData = (() => {
-    const map: Record<string, { month: string; total: number; shorts: number; longform: number; views: number; engagement: number[] }> = {}
+    const map: Record<string, any> = {}
     perfData.forEach(v => {
       if (!v.published_at) return
       const d = new Date(v.published_at)
@@ -90,11 +99,11 @@ function AnalyticsTab() {
     })
     return Object.entries(map).sort(([a], [b]) => b.localeCompare(a)).slice(0, 6).map(([, v]) => ({
       ...v,
-      avgEngagement: v.engagement.length > 0 ? (v.engagement.reduce((a, b) => a + b, 0) / v.engagement.length).toFixed(1) : '—',
+      avgEngagement: v.engagement.length > 0 ? (v.engagement.reduce((a: number, b: number) => a + b, 0) / v.engagement.length).toFixed(1) : '—',
     }))
   })()
 
-  // ── Shorts posting time breakdown ──────────────────────────────────
+  // ── Post timing ────────────────────────────────────────────────────
   const shorts = perfData.filter(v => v.is_short && v.published_at)
   const hourBuckets: Record<string, { label: string; count: number; views: number }> = {
     '0-6': { label: 'Midnight–6am', count: 0, views: 0 },
@@ -109,34 +118,80 @@ function AnalyticsTab() {
     hourBuckets[bucket].count++
     hourBuckets[bucket].views += Number(v.views || 0)
   })
-  const timingRows = Object.values(hourBuckets).filter(b => b.count > 0)
-    .sort((a, b) => (b.views / Math.max(b.count, 1)) - (a.views / Math.max(a.count, 1)))
-
+  const timingRows = Object.values(hourBuckets).filter(b => b.count > 0).sort((a, b) => (b.views / Math.max(b.count, 1)) - (a.views / Math.max(a.count, 1)))
   const maxBarViews = Math.max(...Object.values(hourBuckets).map(b => b.count > 0 ? b.views / b.count : 0), 1)
+
+  // ── Platform-specific stat cards ──────────────────────────────────
+  const statCards = (() => {
+    if (platform === 'YouTube') return [
+      { label: 'Subscribers', val: fmt(snapshots['subscribers']?.metric_value) },
+      { label: 'Total views', val: fmt(snapshots['total_views']?.metric_value) },
+      { label: 'Total videos', val: fmt(snapshots['total_videos']?.metric_value) },
+      { label: 'Avg engagement', val: perfData.length > 0 ? (perfData.reduce((s, v) => s + Number(v.engagement_rate || 0), 0) / perfData.length).toFixed(2) + '%' : '—' },
+    ]
+    if (platform === 'Instagram') return [
+      { label: 'Followers', val: fmt(snapshots['followers']?.metric_value) },
+      { label: 'Total posts', val: fmt(snapshots['total_posts']?.metric_value) },
+      { label: 'Posts tracked', val: perfData.length.toString() },
+      { label: 'Avg engagement', val: perfData.length > 0 ? (perfData.reduce((s, v) => s + Number(v.engagement_rate || 0), 0) / perfData.length).toFixed(2) + '%' : '—' },
+    ]
+    return [
+      { label: 'Followers', val: fmt(snapshots['followers']?.metric_value) },
+      { label: 'Total likes', val: fmt(snapshots['total_likes']?.metric_value) },
+      { label: 'Videos tracked', val: perfData.length.toString() },
+      { label: 'Avg engagement', val: perfData.length > 0 ? (perfData.reduce((s, v) => s + Number(v.engagement_rate || 0), 0) / perfData.length).toFixed(2) + '%' : '—' },
+    ]
+  })()
 
   return (
     <div>
-      {/* Header */}
+      {/* Platform tabs */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex gap-2 flex-wrap">
-          <span className="px-3 py-1.5 rounded-lg text-sm font-medium bg-neutral-900 dark:bg-white text-white dark:text-black">YouTube</span>
-          <span className="px-3 py-1.5 rounded-lg text-sm border border-neutral-200 dark:border-neutral-700 text-neutral-400">TikTok</span>
-          <span className="px-3 py-1.5 rounded-lg text-sm border border-neutral-200 dark:border-neutral-700 text-neutral-400">Instagram</span>
+          {(['YouTube', 'TikTok', 'Instagram'] as const).map(p => (
+            <button key={p} onClick={() => setPlatform(p)}
+              className={`px-3 py-1.5 rounded-lg text-sm transition ${platform === p
+                ? 'bg-neutral-900 dark:bg-white text-white dark:text-black font-medium'
+                : 'border border-neutral-200 dark:border-neutral-700 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}>
+              {p}
+            </button>
+          ))}
         </div>
-        <button onClick={handleSync} disabled={syncing}
-          className="px-3 py-1.5 rounded-lg text-sm border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-50">
-          {syncing ? 'Syncing...' : 'Sync now'}
-        </button>
+        {platform !== 'TikTok' && (
+          <button onClick={handleSync} disabled={syncing}
+            className="px-3 py-1.5 rounded-lg text-sm border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-50">
+            {syncing ? 'Syncing...' : 'Sync now'}
+          </button>
+        )}
       </div>
 
-      {/* Top stats */}
+      {/* TikTok manual entry */}
+      {platform === 'TikTok' && (
+        <div className="bg-neutral-100 dark:bg-neutral-800 rounded-xl p-4 mb-5">
+          <div className="text-sm font-medium mb-1">Update TikTok stats</div>
+          <div className="text-xs text-neutral-500 mb-3">Pull these from your TikTok Studio app and enter them here.</div>
+          <div className="flex gap-3 mb-3 flex-wrap">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-neutral-500">Followers</label>
+              <input value={ttFollowers} onChange={e => setTtFollowers(e.target.value)} placeholder="e.g. 125000"
+                className="px-2 py-1.5 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-36" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-neutral-500">Total likes</label>
+              <input value={ttLikes} onChange={e => setTtLikes(e.target.value)} placeholder="e.g. 2500000"
+                className="px-2 py-1.5 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-36" />
+            </div>
+          </div>
+          <button onClick={saveTikTok} disabled={ttSaving}
+            className="px-4 py-1.5 bg-neutral-900 dark:bg-white text-white dark:text-black rounded-lg text-sm font-medium disabled:opacity-50">
+            {ttSaving ? 'Saving...' : 'Save stats'}
+          </button>
+        </div>
+      )}
+
+      {/* Stat cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-2">
-        {[
-          { label: 'Subscribers', val: fmt(metrics?.subscribers) },
-          { label: 'Total views', val: fmt(metrics?.totalViews) },
-          { label: 'Total videos', val: fmt(metrics?.totalVideos) },
-          { label: 'Avg engagement', val: metrics?.avgEngagement ?? '—' },
-        ].map(({ label, val }) => (
+        {statCards.map(({ label, val }) => (
           <div key={label} className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-3">
             <div className="text-xs text-neutral-500 mb-1">{label}</div>
             <div className="text-xl font-medium">{val}</div>
@@ -145,9 +200,9 @@ function AnalyticsTab() {
       </div>
       {lastSync && <div className="text-xs text-neutral-400 mb-5">Last synced: {lastSync}</div>}
 
-      {perfData.length > 0 && (
+      {/* Charts — YouTube + Instagram */}
+      {perfData.length > 0 && platform !== 'TikTok' && (
         <>
-          {/* Month-to-month comparison */}
           <div className="mb-6">
             <div className="text-sm font-medium mb-3">Month-to-month</div>
             {monthlyData.length === 0 ? (
@@ -158,10 +213,9 @@ function AnalyticsTab() {
                   <thead>
                     <tr className="text-[11px] text-neutral-400 uppercase tracking-wide border-b border-neutral-200 dark:border-neutral-700">
                       <th className="text-left pb-2 font-medium">Month</th>
-                      <th className="text-right pb-2 font-medium">Videos</th>
-                      <th className="text-right pb-2 font-medium">Shorts</th>
-                      <th className="text-right pb-2 font-medium">Long-form</th>
-                      <th className="text-right pb-2 font-medium">Views</th>
+                      <th className="text-right pb-2 font-medium">Posts</th>
+                      {platform === 'YouTube' && <><th className="text-right pb-2 font-medium">Shorts</th><th className="text-right pb-2 font-medium">Long-form</th></>}
+                      <th className="text-right pb-2 font-medium">{platform === 'Instagram' ? 'Likes' : 'Views'}</th>
                       <th className="text-right pb-2 font-medium">Avg Eng.</th>
                     </tr>
                   </thead>
@@ -170,8 +224,7 @@ function AnalyticsTab() {
                       <tr key={row.month} className={`border-b border-neutral-100 dark:border-neutral-800 ${i === 0 ? 'font-medium' : ''}`}>
                         <td className="py-2 text-neutral-700 dark:text-neutral-300">{row.month}</td>
                         <td className="py-2 text-right">{row.total}</td>
-                        <td className="py-2 text-right text-orange-500">{row.shorts || '—'}</td>
-                        <td className="py-2 text-right text-red-500">{row.longform || '—'}</td>
+                        {platform === 'YouTube' && <><td className="py-2 text-right text-orange-500">{row.shorts || '—'}</td><td className="py-2 text-right text-red-500">{row.longform || '—'}</td></>}
                         <td className="py-2 text-right">{fmt(row.views)}</td>
                         <td className="py-2 text-right text-neutral-500">{row.avgEngagement}%</td>
                       </tr>
@@ -182,59 +235,47 @@ function AnalyticsTab() {
             )}
           </div>
 
-          {/* Shorts frequency + timing */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-            {/* Shorts frequency */}
-            <div className="bg-neutral-100 dark:bg-neutral-800 rounded-xl p-4">
-              <div className="text-sm font-medium mb-1">Shorts frequency</div>
-              <div className="text-xs text-neutral-500 mb-3">From last {perfData.length} videos tracked</div>
-              {monthlyData.length === 0 ? (
-                <p className="text-xs text-neutral-400">Sync to see data.</p>
-              ) : (
-                <>
-                  {monthlyData.map(row => (
-                    <div key={row.month} className="flex items-center gap-2 mb-2">
-                      <span className="text-xs text-neutral-500 w-12 flex-shrink-0">{row.month}</span>
-                      <div className="flex-1 bg-neutral-200 dark:bg-neutral-700 rounded-full h-2">
-                        <div className="bg-orange-400 h-2 rounded-full transition-all"
-                          style={{ width: `${Math.min(100, (row.shorts / Math.max(...monthlyData.map(r => r.shorts), 1)) * 100)}%` }} />
-                      </div>
-                      <span className="text-xs font-medium w-4 text-right">{row.shorts}</span>
-                    </div>
-                  ))}
-                  <div className="text-[11px] text-neutral-400 mt-2">
-                    Avg {(monthlyData.reduce((s, r) => s + r.shorts, 0) / Math.max(monthlyData.length, 1)).toFixed(1)} shorts/month
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Post timing */}
-            <div className="bg-neutral-100 dark:bg-neutral-800 rounded-xl p-4">
-              <div className="text-sm font-medium mb-1">Best time to post shorts</div>
-              <div className="text-xs text-neutral-500 mb-3">Avg views per post by time of day</div>
-              {timingRows.length === 0 ? (
-                <p className="text-xs text-neutral-400">No Shorts with publish times yet — sync to populate.</p>
-              ) : (
-                timingRows.map(row => (
-                  <div key={row.label} className="flex items-center gap-2 mb-2">
-                    <span className="text-xs text-neutral-500 w-28 flex-shrink-0">{row.label}</span>
+            {platform === 'YouTube' && (
+              <div className="bg-neutral-100 dark:bg-neutral-800 rounded-xl p-4">
+                <div className="text-sm font-medium mb-1">Shorts frequency</div>
+                <div className="text-xs text-neutral-500 mb-3">From last {perfData.length} videos</div>
+                {monthlyData.map(row => (
+                  <div key={row.month} className="flex items-center gap-2 mb-2">
+                    <span className="text-xs text-neutral-500 w-12 flex-shrink-0">{row.month}</span>
                     <div className="flex-1 bg-neutral-200 dark:bg-neutral-700 rounded-full h-2">
-                      <div className="bg-blue-400 h-2 rounded-full transition-all"
-                        style={{ width: `${Math.min(100, ((row.views / row.count) / maxBarViews) * 100)}%` }} />
+                      <div className="bg-orange-400 h-2 rounded-full" style={{ width: `${Math.min(100, (row.shorts / Math.max(...monthlyData.map((r: any) => r.shorts), 1)) * 100)}%` }} />
                     </div>
-                    <span className="text-xs text-neutral-500 w-16 text-right">{fmt(Math.round(row.views / row.count))}/post</span>
+                    <span className="text-xs font-medium w-4 text-right">{row.shorts}</span>
                   </div>
-                ))
-              )}
+                ))}
+                <div className="text-[11px] text-neutral-400 mt-2">
+                  Avg {(monthlyData.reduce((s: number, r: any) => s + r.shorts, 0) / Math.max(monthlyData.length, 1)).toFixed(1)} shorts/month
+                </div>
+              </div>
+            )}
+            <div className="bg-neutral-100 dark:bg-neutral-800 rounded-xl p-4">
+              <div className="text-sm font-medium mb-1">Best time to post</div>
+              <div className="text-xs text-neutral-500 mb-3">Avg {platform === 'Instagram' ? 'likes' : 'views'} by time of day</div>
+              {timingRows.length === 0 ? (
+                <p className="text-xs text-neutral-400">No publish time data — sync to populate.</p>
+              ) : timingRows.map(row => (
+                <div key={row.label} className="flex items-center gap-2 mb-2">
+                  <span className="text-xs text-neutral-500 w-28 flex-shrink-0">{row.label}</span>
+                  <div className="flex-1 bg-neutral-200 dark:bg-neutral-700 rounded-full h-2">
+                    <div className="bg-blue-400 h-2 rounded-full" style={{ width: `${Math.min(100, ((row.views / row.count) / maxBarViews) * 100)}%` }} />
+                  </div>
+                  <span className="text-xs text-neutral-500 w-16 text-right">{fmt(Math.round(row.views / row.count))}/post</span>
+                </div>
+              ))}
             </div>
           </div>
         </>
       )}
 
-      {perfData.length === 0 && (
+      {perfData.length === 0 && platform !== 'TikTok' && (
         <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-4 text-sm text-neutral-500">
-          Click "Sync now" to pull your YouTube data and populate the charts.
+          Click "Sync now" to pull your {platform} data.
         </div>
       )}
     </div>
