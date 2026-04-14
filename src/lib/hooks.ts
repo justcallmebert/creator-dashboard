@@ -72,13 +72,13 @@ export function useVideos() {
   }, [])
 
   const updateStage = async (id: string, stage: string) => {
-    await supabase.from('videos').update({ stage, updated_at: new Date().toISOString() }).eq('id', id)
-    const video = videos.find(v => v.id === id)
-    if (video) {
+    const { data: updated } = await supabase
+      .from('videos').update({ stage, updated_at: new Date().toISOString() }).eq('id', id).select().single()
+    if (updated) {
       const emoji = STAGE_EMOJI[stage] ?? '📋'
       const label = STAGE_LABELS[stage] ?? stage
-      const suffix = video.assigned_to ? ` — ${video.assigned_to}` : ''
-      pushNotification('stage_change', `${emoji} "${video.title}" moved to ${label}${suffix}`)
+      const suffix = updated.assigned_to ? ` — ${updated.assigned_to}` : ''
+      pushNotification('stage_change', `${emoji} "${updated.title}" moved to ${label}${suffix}`)
     }
   }
 
