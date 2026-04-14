@@ -68,6 +68,15 @@ export type NicheTrend = {
   added_at: string
 }
 
+export type WhiteboardSnapshot = {
+  id: string
+  image_url: string
+  captured_at: string
+  extracted_text: string | null
+  notes: string | null
+  created_at: string
+}
+
 export const STAGES = [
   { id: 'ideation', label: 'Ideation', color: '#7F77DD' },
   { id: 'recorded', label: 'Recorded', color: '#1D9E75' },

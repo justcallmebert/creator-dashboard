@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase, Video, Idea, CalendarEvent, NicheTrend } from './supabase'
+import { supabase, Video, Idea, CalendarEvent, NicheTrend, WhiteboardSnapshot } from './supabase'
 
 export function useAuth() {
   const [user, setUser] = useState<any>(null)
@@ -185,4 +185,36 @@ export function useTrends() {
   }
 
   return { trends, loading, addTrend, deleteTrend }
+}
+
+export function useWhiteboardSnapshots() {
+  const [snapshots, setSnapshots] = useState<WhiteboardSnapshot[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    supabase.from('whiteboard_snapshots').select('*').order('captured_at', { ascending: false }).then(({ data }) => {
+      if (data) setSnapshots(data)
+      setLoading(false)
+    })
+  }, [])
+
+  const addSnapshot = async (snapshot: Omit<WhiteboardSnapshot, 'id' | 'created_at'>) => {
+    const { data, error } = await supabase.from('whiteboard_snapshots').insert(snapshot).select().single()
+    if (data) setSnapshots(prev => [data, ...prev])
+    return { data, error }
+  }
+
+  const updateSnapshot = async (id: string, updates: { notes?: string; extracted_text?: string }) => {
+    await supabase.from('whiteboard_snapshots').update(updates).eq('id', id)
+    setSnapshots(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s))
+  }
+
+  const deleteSnapshot = async (id: string, imageUrl: string) => {
+    const path = imageUrl.split('/whiteboard-photos/')[1]
+    if (path) await supabase.storage.from('whiteboard-photos').remove([path])
+    await supabase.from('whiteboard_snapshots').delete().eq('id', id)
+    setSnapshots(prev => prev.filter(s => s.id !== id))
+  }
+
+  return { snapshots, loading, addSnapshot, updateSnapshot, deleteSnapshot }
 }
