@@ -10,17 +10,22 @@ export async function POST(request: Request) {
   )
   try {
     const body = await request.json()
-    const { followers, totalLikes, videos = [] } = body
+    const { followers, totalLikes, videoCount, avgViews, avgEngagement, videos = [] } = body
     const now = new Date().toISOString()
 
     await supabase.from('analytics_snapshots').delete().eq('platform', 'TikTok')
     await supabase.from('video_performance').delete().eq('platform', 'TikTok')
 
+    const snapshotRows = [
+      { platform: 'TikTok', metric_name: 'followers', metric_value: Number(followers || 0), recorded_at: now },
+      { platform: 'TikTok', metric_name: 'total_likes', metric_value: Number(totalLikes || 0), recorded_at: now },
+      { platform: 'TikTok', metric_name: 'video_count', metric_value: Number(videoCount || 0), recorded_at: now },
+      { platform: 'TikTok', metric_name: 'avg_views', metric_value: Number(avgViews || 0), recorded_at: now },
+      { platform: 'TikTok', metric_name: 'avg_engagement', metric_value: Number(avgEngagement || 0), recorded_at: now },
+    ]
+
     const writes: any[] = [
-      supabase.from('analytics_snapshots').insert([
-        { platform: 'TikTok', metric_name: 'followers', metric_value: Number(followers || 0), recorded_at: now },
-        { platform: 'TikTok', metric_name: 'total_likes', metric_value: Number(totalLikes || 0), recorded_at: now },
-      ]),
+      supabase.from('analytics_snapshots').insert(snapshotRows),
     ]
 
     if (videos.length > 0) {

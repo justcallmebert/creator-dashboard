@@ -39,6 +39,9 @@ function AnalyticsTab() {
   // TikTok manual entry
   const [ttFollowers, setTtFollowers] = useState('')
   const [ttLikes, setTtLikes] = useState('')
+  const [ttVideoCount, setTtVideoCount] = useState('')
+  const [ttAvgViews, setTtAvgViews] = useState('')
+  const [ttAvgEngagement, setTtAvgEngagement] = useState('')
   const [ttSaving, setTtSaving] = useState(false)
 
   const fmt = (n: any) => {
@@ -78,7 +81,13 @@ function AnalyticsTab() {
 
   const saveTikTok = async () => {
     setTtSaving(true)
-    await fetch('/api/sync-tiktok', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ followers: Number(ttFollowers), totalLikes: Number(ttLikes), videos: [] }) })
+    await fetch('/api/sync-tiktok', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      followers: Number(ttFollowers) || 0,
+      totalLikes: Number(ttLikes) || 0,
+      videoCount: Number(ttVideoCount) || 0,
+      avgViews: Number(ttAvgViews) || 0,
+      avgEngagement: Number(ttAvgEngagement) || 0,
+    }) })
     await loadData('TikTok')
     setTtSaving(false)
   }
@@ -138,8 +147,8 @@ function AnalyticsTab() {
     return [
       { label: 'Followers', val: fmt(snapshots['followers']?.metric_value) },
       { label: 'Total likes', val: fmt(snapshots['total_likes']?.metric_value) },
-      { label: 'Videos tracked', val: perfData.length.toString() },
-      { label: 'Avg engagement', val: perfData.length > 0 ? (perfData.reduce((s, v) => s + Number(v.engagement_rate || 0), 0) / perfData.length).toFixed(2) + '%' : '—' },
+      { label: 'Video count', val: fmt(snapshots['video_count']?.metric_value) },
+      { label: 'Avg engagement', val: snapshots['avg_engagement'] ? snapshots['avg_engagement'].metric_value.toFixed(1) + '%' : '—' },
     ]
   })()
 
@@ -169,17 +178,32 @@ function AnalyticsTab() {
       {platform === 'TikTok' && (
         <div className="bg-neutral-100 dark:bg-neutral-800 rounded-xl p-4 mb-5">
           <div className="text-sm font-medium mb-1">Update TikTok stats</div>
-          <div className="text-xs text-neutral-500 mb-3">Pull these from your TikTok Studio app and enter them here.</div>
-          <div className="flex gap-3 mb-3 flex-wrap">
+          <div className="text-xs text-neutral-500 mb-3">Copy from your <a href="https://beacons.ai/justcallmebert/mediakit" target="_blank" className="underline">media kit</a> or TikTok Studio.</div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
             <div className="flex flex-col gap-1">
               <label className="text-xs text-neutral-500">Followers</label>
               <input value={ttFollowers} onChange={e => setTtFollowers(e.target.value)} placeholder="e.g. 125000"
-                className="px-2 py-1.5 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-36" />
+                className="px-2 py-1.5 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-full" />
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs text-neutral-500">Total likes</label>
               <input value={ttLikes} onChange={e => setTtLikes(e.target.value)} placeholder="e.g. 2500000"
-                className="px-2 py-1.5 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-36" />
+                className="px-2 py-1.5 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-full" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-neutral-500">Video count</label>
+              <input value={ttVideoCount} onChange={e => setTtVideoCount(e.target.value)} placeholder="e.g. 84"
+                className="px-2 py-1.5 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-full" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-neutral-500">Avg views / video</label>
+              <input value={ttAvgViews} onChange={e => setTtAvgViews(e.target.value)} placeholder="e.g. 15000"
+                className="px-2 py-1.5 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-full" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-neutral-500">Avg engagement %</label>
+              <input value={ttAvgEngagement} onChange={e => setTtAvgEngagement(e.target.value)} placeholder="e.g. 4.2"
+                className="px-2 py-1.5 border rounded-lg text-sm dark:bg-neutral-900 dark:border-neutral-700 w-full" />
             </div>
           </div>
           <button onClick={saveTikTok} disabled={ttSaving}
