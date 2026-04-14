@@ -1,12 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
-
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY!
 const BASE = 'https://www.googleapis.com/youtube/v3'
 
 const EXCLUDED_CHANNEL_NAMES = new Set([
@@ -41,15 +35,6 @@ function isEnglish(title: string) {
   return allLetters === 0 || latinLetters / allLetters > 0.5
 }
 
-async function ytFetch(endpoint: string, params: Record<string, string>) {
-  const url = new URL(`${BASE}/${endpoint}`)
-  url.searchParams.set('key', YOUTUBE_API_KEY)
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
-  const res = await fetch(url.toString())
-  if (!res.ok) throw new Error(`YouTube API error: ${res.status}`)
-  return res.json()
-}
-
 function fmtViews(n: number) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
   if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K'
@@ -64,6 +49,22 @@ function isExcluded(title: string, channelTitle: string) {
 }
 
 export async function GET(request: Request) {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+  const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY!
+
+  function ytFetch(endpoint: string, params: Record<string, string>) {
+    const url = new URL(`${BASE}/${endpoint}`)
+    url.searchParams.set('key', YOUTUBE_API_KEY)
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
+    return fetch(url.toString()).then(res => {
+      if (!res.ok) throw new Error(`YouTube API error: ${res.status}`)
+      return res.json()
+    })
+  }
+
   try {
     const { searchParams } = new URL(request.url)
     const period = (searchParams.get('period') ?? '30d') as '7d' | '30d' | '90d'
