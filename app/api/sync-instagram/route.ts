@@ -41,6 +41,7 @@ export async function GET() {
       fields: 'id,timestamp,media_type,like_count,comments_count,caption,permalink',
       limit: '50',
     })
+    console.log('Instagram media response:', JSON.stringify(mediaRes).slice(0, 500))
     const media: any[] = mediaRes.data ?? []
 
     // Build video performance rows
@@ -86,7 +87,9 @@ export async function GET() {
       username: profile.username,
       followers: Number(profile.followers_count).toLocaleString(),
       totalPosts: profile.media_count,
+      mediaReturned: media.length,
       postsProcessed: videoPerformance.length,
+      mediaDebug: mediaRes.error ?? null,
     })
   } catch (error: any) {
     console.error('Instagram sync error:', error)
