@@ -76,20 +76,24 @@ export async function GET() {
       ]),
     ]
 
+    let perfInsertError = null
     if (videoPerformance.length > 0) {
-      writes.push(supabase.from('video_performance').insert(videoPerformance))
+      const { error } = await supabase.from('video_performance').insert(videoPerformance)
+      perfInsertError = error ?? null
     }
 
-    await Promise.all(writes)
+    const [snapResult] = await Promise.all(writes)
 
     return NextResponse.json({
-      success: true,
+      success: !perfInsertError,
       username: profile.username,
       followers: Number(profile.followers_count).toLocaleString(),
       totalPosts: profile.media_count,
       mediaReturned: media.length,
       postsProcessed: videoPerformance.length,
-      mediaDebug: mediaRes.error ?? null,
+      perfInsertError: perfInsertError ? { message: perfInsertError.message, code: perfInsertError.code, details: perfInsertError.details, hint: perfInsertError.hint } : null,
+      snapError: (snapResult as any)?.error ?? null,
+      sampleRow: videoPerformance[0] ?? null,
     })
   } catch (error: any) {
     console.error('Instagram sync error:', error)
